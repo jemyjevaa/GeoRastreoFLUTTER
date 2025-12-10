@@ -1,6 +1,7 @@
 class RouteModel {
   final int id;
   final String name;
+  bool status;
   double lat;
   double lng;
 
@@ -9,6 +10,7 @@ class RouteModel {
     required this.name,
     this.lat = 0.0,
     this.lng = 0.0,
+    this.status = false,
   });
 
   factory RouteModel.fromJson(Map<String, dynamic> json) => RouteModel(

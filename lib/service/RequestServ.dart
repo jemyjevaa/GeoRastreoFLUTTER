@@ -187,6 +187,33 @@ class RequestServ {
     }
   }
 
+  Future<dynamic> fetchStatusDevice({ required String cookie, required int deviceId }) async {
+    try {
+      final url = Uri.parse("https://rastreobusmen.geovoy.com/api/devices/$deviceId");
+
+      final response = await http.get(
+        url,
+        headers: {"Cookie": cookie},
+      );
+
+      if (response.statusCode != 200) {
+        print("HTTP error: ${response.statusCode}");
+        return null; // O podrías lanzar un error o devolver un valor especial
+      }
+
+      final jsonBody = jsonDecode(response.body);
+
+      // print("jsonBody =>: $jsonBody");
+
+      return jsonBody;  // Aquí regresas el contenido decodificado
+
+    } catch (e) {
+      print("Error fetchStatusForUnit: $e");
+      return null;
+    }
+  }
+
+
 
 }
 

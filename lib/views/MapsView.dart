@@ -27,16 +27,11 @@ class _MapsViewContent extends StatefulWidget {
 
 class _MapsViewContentState extends State<_MapsViewContent> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  GoogleMapController? _mapController;
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(20.543508165491687, -103.47583907776028),
     zoom: 14,
   );
-
-  void _onMapCreated(GoogleMapController controller) {
-    _mapController = controller;
-  }
 
   void _showUnitSelectionSheet() {
     // Obtenemos el ViewModel sin escuchar cambios, ya que solo necesitamos llamar a un método.
@@ -223,7 +218,8 @@ class _MapsViewContentState extends State<_MapsViewContent> {
         children: [
           GoogleMap(
             initialCameraPosition: _initialPosition,
-            onMapCreated: _onMapCreated,
+            onMapCreated: viewModel.onMapCreated,
+            markers: viewModel.markers,
             myLocationEnabled: true,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
