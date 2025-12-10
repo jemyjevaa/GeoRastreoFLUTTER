@@ -21,7 +21,8 @@ class MapViewModel extends ChangeNotifier {
 
   /// MAP
   GoogleMapController? _mapController;
-  BitmapDescriptor? _unitIcon;
+  BitmapDescriptor? _unitIconOn;
+  BitmapDescriptor? _unitIconOff;
 
   // Método correcto para onMapCreated
   void onMapCreated(GoogleMapController controller) {
@@ -60,13 +61,13 @@ class MapViewModel extends ChangeNotifier {
         _allRoutes = data.map((json) => RouteModel.fromJson(json)).toList();
         _filteredRoutes = List.from(_allRoutes);
         initSocket();
-        _loadCustomMarkerIcon();
+        _loadCustomMarkerIcons();
       } else {
         // Manejar el error de una forma más visible para el usuario si es necesario
         debugPrint('Error fetching routes: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('Error fetching routes: $e');
+      debugPrint('Error fetching routes: $e'); // 1848 2411
     } finally {
       _isLoadingRoutes = false;
 
@@ -74,10 +75,14 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadCustomMarkerIcon() async {
-    _unitIcon = await BitmapDescriptor.fromAssetImage(
+  Future<void> _loadCustomMarkerIcons() async {
+    _unitIconOn = await BitmapDescriptor.fromAssetImage(
       const ImageConfiguration(size: Size(48, 48)),
-      'assets/images/backgrounds/FondoGeo.png',
+      'assets/images/icons/bus_Motion_True.png',
+    );
+    _unitIconOff = await BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(size: Size(48, 48)),
+      'assets/images/icons/bus_Motion_False.png',
     );
   }
 
@@ -139,7 +144,7 @@ class MapViewModel extends ChangeNotifier {
       markerId: MarkerId(unit.id.toString()),
       position: LatLng(unit.lat, unit.lng),
       infoWindow: InfoWindow(title: unit.name),
-      icon: unit.status? BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen):BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed)
+      icon: unit.status ? _unitIconOn! : _unitIconOff!,
     );
     _markers.removeWhere((m) => m.markerId.value == unit.id.toString());
     _markers.add(marker);
