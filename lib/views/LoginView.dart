@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geo_rastreo/views/MapsView.dart';
 
 
 class LoginView extends StatefulWidget {
@@ -37,29 +38,32 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
     );
     _animationController.forward();
     
-    // Auto-focus en el campo de usuario
+    
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _usuarioFocus.requestFocus();
     });
   }
 
   void _handleLogin() async {
-    if (_formKey.currentState!.validate()) {
+    
       setState(() {
         _isLoading = true;
       });
 
-      // Simular proceso de login
+      
       await Future.delayed(const Duration(seconds: 1));
 
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
-
-      
+        
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const MapsView()),
+        );
       }
-    }
+    
   }
 
   Widget _buildTextField({
@@ -217,7 +221,7 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                       
                       const SizedBox(height: 20),
                       
-                      // Campo de Contraseña
+                      
                       _buildTextField(
                         controller: _passwordController,
                         focusNode: _passwordFocus,
@@ -237,11 +241,11 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                       
                       const SizedBox(height: 20),
                       
-                      // Checkbox y enlace de contraseña
+                      
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          // Checkbox "Mantener sesión iniciada"
+                          
                           Expanded(
                             child: Row(
                               children: [
@@ -274,7 +278,7 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                               ],
                             ),
                           ),
-                          // Enlace "Olvidaste tu contraseña"
+                          
                           TextButton(
                             onPressed: () {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -303,7 +307,7 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                       
                       const SizedBox(height: 30),
                       
-                      // Botón de Iniciar Sesión
+                      
                       SizedBox(
                         width: double.infinity,
                         height: 50,
@@ -338,6 +342,15 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                       ),
                       
                       const SizedBox(height: 30),
+                      
+                    
+                      Text(
+                        'Versión 2.0',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ),
