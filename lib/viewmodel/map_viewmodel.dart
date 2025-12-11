@@ -1,5 +1,6 @@
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -12,33 +13,98 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class MapViewModel extends ChangeNotifier {
 
+  // Estado
   final Color colorAmarillo = const Color(0xFFF69D32);
   final Color colorAzulFuerte = const Color(0xFF14143A);
+  final String _cookie = "JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
 
-  // Estado
   List<RouteModel> _allRoutes = [];
   List<RouteModel> _filteredRoutes = [];
   final List<RouteModel> _selectedRoutes = [];
+
+  GoogleMapController? _mapController;
   bool _isLoadingRoutes = false;
   String _searchQuery = '';
 
-  GoogleMapController? _mapController;
+  bool get isLoadingRoutes => _isLoadingRoutes;
+
+  List<RouteModel> get selectedRoutes => _selectedRoutes;
+  List<RouteModel> get filteredRoutes => _filteredRoutes;
+  int get totalRoutesCount => _allRoutes.length;
+  int get selectedRoutesCount => _selectedRoutes.length;
+
+
+  GoogleMapController? get mapController => _mapController;
+
+  final Set<Marker> _markers = {};
+  Set<Marker> get markers => _markers;
+
+
+  bool isRouteSelected(RouteModel route) {
+    return _selectedRoutes.contains(route);
+  }
 
   void onMapCreated(GoogleMapController controller) {
     _mapController = controller;
   }
-  GoogleMapController? get mapController => _mapController;
-  
-  final Set<Marker> _markers = {};
-  Set<Marker> get markers => _markers;
 
-  List<RouteModel> get filteredRoutes => _filteredRoutes;
-  List<RouteModel> get selectedRoutes => _selectedRoutes;
-  bool get isLoadingRoutes => _isLoadingRoutes;
-  int get totalRoutesCount => _allRoutes.length;
-  int get selectedRoutesCount => _selectedRoutes.length;
+  void searchRoutes(String query) {
+    _searchQuery = query;
+    _filteredRoutes = _allRoutes
+        .where((route) =>
+            route.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .toList();
+    notifyListeners();
+  }
 
-  final String _cookie = "JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
+  void toggleSelectAll() {
+    if (_selectedRoutes.length == _allRoutes.length) {
+      _selectedRoutes.clear();
+      _markers.clear();
+    } else {
+      _selectedRoutes.clear();
+      _selectedRoutes.addAll(_allRoutes);
+    }
+    _updateCameraBounds();
+    notifyListeners();
+  }
+
+  void initSocket() {
+    final socket = SocketServ.instance;
+    socket.onUnitUpdate = (data) {
+      _updateUnitPosition(data);
+    };
+    socket.connect();
+  }
+
+  void _updateCameraBounds() {
+    if (_mapController == null || _selectedRoutes.isEmpty) return;
+    double positionCam = Platform.isAndroid ? 15.9 : 15.0;
+
+    if (_selectedRoutes.length == 1) {
+      final unit = _selectedRoutes.first;
+      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(unit.lat, unit.lng), positionCam));
+    } else {
+      double minLat = _selectedRoutes.first.lat;
+      double maxLat = _selectedRoutes.first.lat;
+      double minLng = _selectedRoutes.first.lng;
+      double maxLng = _selectedRoutes.first.lng;
+
+      for (var unit in _selectedRoutes) {
+        if (unit.lat < minLat) minLat = unit.lat;
+        if (unit.lat > maxLat) maxLat = unit.lat;
+        if (unit.lng < minLng) minLng = unit.lng;
+        if (unit.lng > maxLng) maxLng = unit.lng;
+      }
+
+      final bounds = LatLngBounds(
+        southwest: LatLng(minLat, minLng),
+        northeast: LatLng(maxLat, maxLng),
+      );
+
+      _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, positionCam));
+    }
+  }
 
   Future<void> fetchRoutes() async {
     if (_allRoutes.isNotEmpty) return;
@@ -70,67 +136,6 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  Future<BitmapDescriptor> _createCustomMarker(String text, bool isOnline) async {
-    final double iconWidth = 200.0;
-    final double padding = 8.0;
-
-    final TextPainter textPainter = TextPainter(
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-    );
-
-    textPainter.text = TextSpan(
-      text: text,
-      style: const TextStyle(
-        fontSize: 50,
-        color: Colors.black,
-      ),
-    );
-
-    textPainter.layout(maxWidth: iconWidth * 1.5);
-
-    final String imagePath = isOnline
-        ? 'assets/images/icons/bus_Motion_True.png'
-        : 'assets/images/icons/bus_Motion_False.png';
-    final ByteData data = await rootBundle.load(imagePath);
-    final ui.Codec codec = await ui.instantiateImageCodec(
-      data.buffer.asUint8List(),
-      targetWidth: iconWidth.toInt(),
-    );
-    final ui.FrameInfo fi = await codec.getNextFrame();
-    final ui.Image image = fi.image;
-
-    final double canvasWidth = (textPainter.width > image.width) ? textPainter.width : image.width.toDouble();
-    final double canvasHeight = textPainter.height + image.height + padding;
-    
-    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(pictureRecorder, Rect.fromLTWH(0, 0, canvasWidth, canvasHeight));
-
-    final textOffset = Offset((canvasWidth - textPainter.width) / 2, 0);
-    textPainter.paint(canvas, textOffset);
-
-    final imageOffset = Offset((canvasWidth - image.width) / 2, textPainter.height + padding);
-    canvas.drawImage(image, imageOffset, Paint());
-
-    final ui.Image finalImage = await pictureRecorder.endRecording().toImage(
-      canvasWidth.toInt(),
-      canvasHeight.toInt(),
-    );
-
-    final ByteData? byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
-    final Uint8List pngBytes = byteData!.buffer.asUint8List();
-    return BitmapDescriptor.fromBytes(pngBytes);
-  }
-
-  void searchRoutes(String query) {
-    _searchQuery = query;
-    _filteredRoutes = _allRoutes
-        .where((route) =>
-            route.name.toLowerCase().contains(_searchQuery.toLowerCase()))
-        .toList();
-    notifyListeners();
-  }
-
   Future<void> toggleRouteSelection(RouteModel route) async {
     if (_selectedRoutes.contains(route)) {
       _selectedRoutes.remove(route);
@@ -146,30 +151,6 @@ class MapViewModel extends ChangeNotifier {
     }
     _updateCameraBounds();
     notifyListeners();
-  }
-
-  void toggleSelectAll() {
-    if (_selectedRoutes.length == _allRoutes.length) {
-      _selectedRoutes.clear();
-      _markers.clear();
-    } else {
-      _selectedRoutes.clear();
-      _selectedRoutes.addAll(_allRoutes);
-    }
-    _updateCameraBounds();
-    notifyListeners();
-  }
-
-  bool isRouteSelected(RouteModel route) {
-    return _selectedRoutes.contains(route);
-  }
-
-  void initSocket() {
-    final socket = SocketServ.instance;
-    socket.onUnitUpdate = (data) {
-      _updateUnitPosition(data);
-    };
-    socket.connect();
   }
 
   Future<void> _addOrUpdateMarker(RouteModel unit) async {
@@ -215,30 +196,56 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  void _updateCameraBounds() {
-    if (_mapController == null || _selectedRoutes.isEmpty) return;
+  Future<BitmapDescriptor> _createCustomMarker(String text, bool isOnline) async {
+    final double iconWidth = Platform.isAndroid ? 115.0 : 180.0 ;
+    const double padding = 1.0;
 
-    if (_selectedRoutes.length == 1) {
-      final unit = _selectedRoutes.first;
-      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(unit.lat, unit.lng), 15));
-    } else {
-      double minLat = _selectedRoutes.first.lat;
-      double maxLat = _selectedRoutes.first.lat;
-      double minLng = _selectedRoutes.first.lng;
-      double maxLng = _selectedRoutes.first.lng;
+    final TextPainter textPainter = TextPainter(
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    );
 
-      for (var unit in _selectedRoutes) {
-        if (unit.lat < minLat) minLat = unit.lat;
-        if (unit.lat > maxLat) maxLat = unit.lat;
-        if (unit.lng < minLng) minLng = unit.lng;
-        if (unit.lng > maxLng) maxLng = unit.lng;
-      }
+    textPainter.text = TextSpan(
+      text: text,
+      style: TextStyle(
+        fontSize:  Platform.isAndroid ? 30 : 50,
+        color: Colors.black,
+      ),
+    );
 
-      final bounds = LatLngBounds(
-        southwest: LatLng(minLat, minLng),
-        northeast: LatLng(maxLat, maxLng),
-      );
-      _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
-    }
+    textPainter.layout(maxWidth: iconWidth * 3.5);
+
+    final String imagePath = isOnline
+        ? 'assets/images/icons/bus_Motion_True.png'
+        : 'assets/images/icons/bus_Motion_False.png';
+    final ByteData data = await rootBundle.load(imagePath);
+    final ui.Codec codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: iconWidth.toInt(),
+    );
+    final ui.FrameInfo fi = await codec.getNextFrame();
+    final ui.Image image = fi.image;
+
+    final double canvasWidth = (textPainter.width > image.width) ? textPainter.width : image.width.toDouble();
+    final double canvasHeight = textPainter.height + image.height + padding;
+
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder, Rect.fromLTWH(0, 0, canvasWidth, canvasHeight));
+
+    final textOffset = Offset((canvasWidth - textPainter.width) / 2, 0);
+    textPainter.paint(canvas, textOffset);
+
+    final imageOffset = Offset((canvasWidth - image.width) / 2, textPainter.height + padding);
+    canvas.drawImage(image, imageOffset, Paint());
+
+    final ui.Image finalImage = await pictureRecorder.endRecording().toImage(
+      canvasWidth.toInt(),
+      canvasHeight.toInt(),
+    );
+
+    final ByteData? byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
+    final Uint8List pngBytes = byteData!.buffer.asUint8List();
+    return BitmapDescriptor.fromBytes(pngBytes);
   }
+
 }
