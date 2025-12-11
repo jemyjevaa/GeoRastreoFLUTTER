@@ -1,9 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:geo_rastreo/views/LoginView.dart'; 
+import 'package:provider/provider.dart';
+import 'package:geo_rastreo/views/LoginView.dart';
+import 'package:geo_rastreo/views/MapsView.dart';
+import 'package:geo_rastreo/viewmodels/login_viewmodel.dart';
+import 'package:geo_rastreo/services/auth_service.dart';
 
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => LoginViewModel()),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -17,8 +28,53 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.orange,
         useMaterial3: true,
       ),
-      home: LoginView(), 
+      home: const AuthChecker(),
       debugShowCheckedModeBanner: false,
     );
+  }
+}
+
+class AuthChecker extends StatefulWidget {
+  const AuthChecker({super.key});
+
+  @override
+  State<AuthChecker> createState() => _AuthCheckerState();
+}
+
+class _AuthCheckerState extends State<AuthChecker> {
+  final AuthService _authService = AuthService();
+  bool _isChecking = true;
+  bool _hasSession = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSession();
+  }
+
+  Future<void> _checkSession() async {
+    final session = await _authService.getUserSession();
+    
+    if (mounted) {
+      setState(() {
+        _hasSession = session != null && session.sesionActiva == '1';
+        _isChecking = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isChecking) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFFF69D32),
+          ),
+        ),
+      );
+    }
+
+    return _hasSession ? const MapsView() : const LoginView();
   }
 }

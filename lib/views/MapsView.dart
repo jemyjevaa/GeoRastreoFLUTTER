@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
+import '../services/auth_service.dart';
+import '../models/user_session.dart';
 
 class MapsView extends StatefulWidget {
   const MapsView({super.key});
@@ -23,14 +25,35 @@ class _MapsViewState extends State<MapsView> {
   final List<dynamic> _selectedRoutes = [];
   bool _isLoadingRoutes = false;
   
-  
-  final String _cookie = "JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
+  final AuthService _authService = AuthService();
+  UserSession? _userSession;
+  String _cookie = "JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
 
   
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(20.543508165491687, -103.47583907776028),
     zoom: 14,
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserSession();
+  }
+
+  Future<void> _loadUserSession() async {
+    final session = await _authService.getUserSession();
+    final cookie = await _authService.getCookie();
+    
+    if (mounted) {
+      setState(() {
+        _userSession = session;
+        if (cookie != null) {
+          _cookie = cookie;
+        }
+      });
+    }
+  }
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
@@ -231,23 +254,23 @@ class _MapsViewState extends State<MapsView> {
               decoration: BoxDecoration(
                 color: _colorAzulFuerte,
               ),
-              accountName: const Text(
-                'Usuario Demo',
-                style: TextStyle(
+              accountName: Text(
+                _userSession?.name ?? 'Usuario',
+                style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
                 ),
               ),
-              accountEmail: const Text(
-                'usuario@demo.com',
-                style: TextStyle(
+              accountEmail: Text(
+                _userSession?.email ?? 'usuario@demo.com',
+                style: const TextStyle(
                   color: Colors.white70,
                 ),
               ),
               currentAccountPicture: CircleAvatar(
                 backgroundColor: _colorAmarillo,
                 child: Text(
-                  'U',
+                  (_userSession?.name ?? 'U').substring(0, 1).toUpperCase(),
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -265,9 +288,11 @@ class _MapsViewState extends State<MapsView> {
                 'Cerrar Sesión',
                 style: TextStyle(color: Colors.red),
               ),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pop(context);
+              onTap: () async {
+                await _authService.logout();
+                if (mounted) {
+                  Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                }
               },
             ),
             const SizedBox(height: 20),
