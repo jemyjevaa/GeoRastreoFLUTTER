@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:provider/provider.dart';
-import '../viewmodel/map_viewmodel.dart';
+import 'package:http/http.dart' as http;
+import '../services/auth_service.dart';
+import '../models/user_session.dart';
 
 class MapsView extends StatelessWidget {
   const MapsView({super.key});
@@ -24,11 +25,79 @@ class _MapsViewContent extends StatefulWidget {
 
 class _MapsViewContentState extends State<_MapsViewContent> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  
+  GoogleMapController? _mapController;
+  
+  
+  List<dynamic> _allRoutes = [];
+  List<dynamic> _filteredRoutes = [];
+  final List<dynamic> _selectedRoutes = [];
+  bool _isLoadingRoutes = false;
+  
+  final AuthService _authService = AuthService();
+  UserSession? _userSession;
+  String _cookie = "JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(20.543508165491687, -103.47583907776028),
     zoom: 14,
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserSession();
+  }
+
+  Future<void> _loadUserSession() async {
+    final session = await _authService.getUserSession();
+    final cookie = await _authService.getCookie();
+    
+    if (mounted) {
+      setState(() {
+        _userSession = session;
+        if (cookie != null) {
+          _cookie = cookie;
+        }
+      });
+    }
+  }
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+  }
+
+  Future<void> _fetchRoutes() async {
+    setState(() {
+      _isLoadingRoutes = true;
+    });
+
+    try {
+      final response = await http.get(
+        Uri.parse('https://rastreobusmen.geovoy.com/api/devices'),
+        headers: {'Cookie': _cookie},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          _allRoutes = data;
+          _filteredRoutes = data;
+        });
+      } else {
+        // Manejar error
+        debugPrint('Error fetching routes: ${response.statusCode}');
+      }
+    } catch (e) {
+      debugPrint('Error fetching routes: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingRoutes = false;
+        });
+      }
+    }
+  }
 
   void _showUnitSelectionSheet() {
     final viewModel = Provider.of<MapViewModel>(context, listen: false);
@@ -178,23 +247,23 @@ class _MapsViewContentState extends State<_MapsViewContent> {
               decoration: BoxDecoration(
                 color: viewModel.colorAzulFuerte,
               ),
-              accountName: const Text(
-                'Usuario Demo',
-                style: TextStyle(
+              accountName: Text(
+                _userSession?.name ?? 'Usuario',
+                style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
                 ),
               ),
-              accountEmail: const Text(
-                'usuario@demo.com',
-                style: TextStyle(
+              accountEmail: Text(
+                _userSession?.email ?? 'usuario@demo.com',
+                style: const TextStyle(
                   color: Colors.white70,
                 ),
               ),
               currentAccountPicture: CircleAvatar(
                 backgroundColor: viewModel.colorAmarillo,
                 child: Text(
-                  'U',
+                  (_userSession?.name ?? 'U').substring(0, 1).toUpperCase(),
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
@@ -212,9 +281,11 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                 'Cerrar Sesión',
                 style: TextStyle(color: Colors.red),
               ),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pop(context);
+              onTap: () async {
+                await _authService.logout();
+                if (mounted) {
+                  Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
+                }
               },
             ),
             const SizedBox(height: 20),

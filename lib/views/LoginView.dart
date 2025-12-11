@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:geo_rastreo/views/MapsView.dart';
+import 'package:geo_rastreo/viewmodels/login_viewmodel.dart';
 
 
 class LoginView extends StatefulWidget {
@@ -45,25 +47,30 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
   }
 
   void _handleLogin() async {
-    
-      setState(() {
-        _isLoading = true;
-      });
-
-      
-      await Future.delayed(const Duration(seconds: 1));
+    if (_formKey.currentState!.validate()) {
+      final viewModel = context.read<LoginViewModel>();
+      final success = await viewModel.login(
+        _usuarioController.text.trim(),
+        _passwordController.text.trim(),
+        mantenerSesion: _mantenerSesion,
+      );
 
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const MapsView()),
-        );
+        if (success) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const MapsView()),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(viewModel.errorMessage ?? 'Error desconocido'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
-    
+    }
   }
 
   Widget _buildTextField({
@@ -136,7 +143,7 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
             horizontal: 15,
           ),
           errorStyle: const TextStyle(
-            color: Colors.white,
+            color: Colors.red,
             fontWeight: FontWeight.w500,
             shadows: [
               Shadow(
@@ -279,29 +286,7 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                             ),
                           ),
                           
-                          TextButton(
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text(
-                                    'Recuperación de contraseña próximamente',
-                                  ),
-                                  backgroundColor: _colorBoton,
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            },
-                            child: Text(
-                              '¿Olvidaste tu contraseña?',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
-                                decoration: TextDecoration.underline,
-                                decorationColor: Colors.white,
-                              ),
-                            ),
-                          ),
+                          
                         ],
                       ),
                       
@@ -312,7 +297,7 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                         width: double.infinity,
                         height: 50,
                         child: ElevatedButton(
-                          onPressed: _isLoading ? null : _handleLogin,
+                          onPressed: context.watch<LoginViewModel>().isLoading ? null : _handleLogin,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _colorBoton,
                             foregroundColor: Colors.white,
@@ -322,7 +307,7 @@ class _LoginViewState extends State<LoginView> with SingleTickerProviderStateMix
                             ),
                             elevation: 5,
                           ),
-                          child: _isLoading
+                          child: context.watch<LoginViewModel>().isLoading
                               ? const SizedBox(
                                   height: 24,
                                   width: 24,
