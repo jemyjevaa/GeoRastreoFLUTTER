@@ -154,7 +154,7 @@ class MapViewModel extends ChangeNotifier {
         var result = await RequestServ.instance.fetchStatusDevice(cookie: _cookie, deviceId: route.id);
         route.lat = things!["latitude"];
         route.lng = things["longitude"];
-        print("result[status] => ${result["status"]}");
+
         route.status = result["status"].toString().toUpperCase() == "ONLINE";
         _selectedRoutes.add(route);
         await _addOrUpdateMarker(route);
@@ -169,7 +169,7 @@ class MapViewModel extends ChangeNotifier {
   }
 
   Future<void> _addOrUpdateMarker(RouteModel unit) async {
-    print("_addOrUpdateMarker => ${unit.status}");
+
     final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
 
     final marker = Marker(
@@ -231,10 +231,26 @@ class MapViewModel extends ChangeNotifier {
     );
 
     textPainter.layout(maxWidth: iconWidth * 3.5);
+    print(text);
+    String text_icon = text.toUpperCase();
 
-    final String imagePath = isOnline
-        ? 'assets/images/icons/bus_Motion_True.png'
-        : 'assets/images/icons/bus_Motion_False.png';
+    final String imagePath = switch (text_icon) {
+      String s when s.startsWith("CMS") =>
+      isOnline
+          ? 'assets/images/icons/van_Motion_true.png'
+          : 'assets/images/icons/van_Motion_False.png',
+
+      String s when s.startsWith("B") =>
+      isOnline
+          ? 'assets/images/icons/bus_Motion_True.png'
+          : 'assets/images/icons/bus_Motion_False.png',
+
+      _ =>
+      isOnline
+          ? 'assets/images/icons/car_Motion_true.png'
+          : 'assets/images/icons/car_Motion_False.png',
+    };
+
     final ByteData data = await rootBundle.load(imagePath);
     final ui.Codec codec = await ui.instantiateImageCodec(
       data.buffer.asUint8List(),
