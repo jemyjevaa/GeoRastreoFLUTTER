@@ -28,13 +28,12 @@ class RequestServ {
       String fullUrl = base + urlParam;
 
       http.Response response;
-      // print("=> $fullUrl");
-      // Agregar parámetros para GET en query string
+
       if (method.toUpperCase() == 'GET' && params != null && params.isNotEmpty) {
         final uri = Uri.parse(fullUrl).replace(queryParameters: params);
         response = await http.get(uri).timeout(const Duration(seconds: 10));
       } else {
-        // Construir el body según asJson o form-url-encoded
+
         dynamic body;
         Map<String, String>? headers;
 
@@ -125,7 +124,6 @@ class RequestServ {
         return null;
       }
 
-      // Obtiene todas las cookies
       String? rawCookie = response.headers['set-cookie'];
 
       if (rawCookie != null) {
@@ -160,24 +158,17 @@ class RequestServ {
         return null;
       }
 
-      // La API regresa una LISTA
       final List<dynamic> jsonList = jsonDecode(response.body);
 
-      // print("Positions received => ${jsonList.length} registros");
-
-      // Buscar el que coincida con deviceId
       final pos = jsonList.cast<Map<String, dynamic>>().firstWhere(
             (p) => p["deviceId"] == deviceId,
         orElse: () => {},
       );
 
-      // Si no lo encontró, regresa null
       if (pos.isEmpty) {
         print("No se encontró posición para deviceId $deviceId");
         return null;
       }
-
-      // print("POSICIÓN ENCONTRADA => $pos");
 
       return pos;
 
@@ -198,14 +189,12 @@ class RequestServ {
 
       if (response.statusCode != 200) {
         print("HTTP error: ${response.statusCode}");
-        return null; // O podrías lanzar un error o devolver un valor especial
+        return null;
       }
 
       final jsonBody = jsonDecode(response.body);
 
-      // print("jsonBody =>: $jsonBody");
-
-      return jsonBody;  // Aquí regresas el contenido decodificado
+      return jsonBody;
 
     } catch (e) {
       print("Error fetchStatusForUnit: $e");

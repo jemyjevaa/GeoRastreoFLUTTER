@@ -1,6 +1,9 @@
 
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import '../models/route_model.dart';
 import '../service/RequestServ.dart';
@@ -8,7 +11,7 @@ import '../service/SocketServ.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class MapViewModel extends ChangeNotifier {
-  // Colores (pueden moverse a un archivo de temas si se prefiere)
+
   final Color colorAmarillo = const Color(0xFFF69D32);
   final Color colorAzulFuerte = const Color(0xFF14143A);
 
@@ -19,12 +22,8 @@ class MapViewModel extends ChangeNotifier {
   bool _isLoadingRoutes = false;
   String _searchQuery = '';
 
-  /// MAP
   GoogleMapController? _mapController;
-  BitmapDescriptor? _unitIconOn;
-  BitmapDescriptor? _unitIconOff;
 
-  // Método correcto para onMapCreated
   void onMapCreated(GoogleMapController controller) {
     _mapController = controller;
   }
@@ -33,19 +32,16 @@ class MapViewModel extends ChangeNotifier {
   final Set<Marker> _markers = {};
   Set<Marker> get markers => _markers;
 
-  // Getters públicos para que la UI acceda al estado
   List<RouteModel> get filteredRoutes => _filteredRoutes;
   List<RouteModel> get selectedRoutes => _selectedRoutes;
   bool get isLoadingRoutes => _isLoadingRoutes;
   int get totalRoutesCount => _allRoutes.length;
   int get selectedRoutesCount => _selectedRoutes.length;
 
-  // Cookie (considera un manejo más seguro para esto, como almacenamiento seguro)
   final String _cookie = "JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
 
-  // Lógica de negocio
   Future<void> fetchRoutes() async {
-    if (_allRoutes.isNotEmpty) return; // No volver a cargar si ya las tenemos
+    if (_allRoutes.isNotEmpty) return;
 
     _isLoadingRoutes = true;
     notifyListeners();
@@ -61,13 +57,12 @@ class MapViewModel extends ChangeNotifier {
         _allRoutes = data.map((json) => RouteModel.fromJson(json)).toList();
         _filteredRoutes = List.from(_allRoutes);
         initSocket();
-        _loadCustomMarkerIcons();
       } else {
-        // Manejar el error de una forma más visible para el usuario si es necesario
+
         debugPrint('Error fetching routes: ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('Error fetching routes: $e'); // 1848 2411
+      debugPrint('Error fetching routes: $e');
     } finally {
       _isLoadingRoutes = false;
 
@@ -75,15 +70,56 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadCustomMarkerIcons() async {
-    _unitIconOn = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(48, 48)),
-      'assets/images/icons/bus_Motion_True.png',
+  Future<BitmapDescriptor> _createCustomMarker(String text, bool isOnline) async {
+    final double iconWidth = 200.0;
+    final double padding = 8.0;
+
+    final TextPainter textPainter = TextPainter(
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
     );
-    _unitIconOff = await BitmapDescriptor.fromAssetImage(
-      const ImageConfiguration(size: Size(48, 48)),
-      'assets/images/icons/bus_Motion_False.png',
+
+    textPainter.text = TextSpan(
+      text: text,
+      style: const TextStyle(
+        fontSize: 50,
+        color: Colors.black,
+      ),
     );
+
+    textPainter.layout(maxWidth: iconWidth * 1.5);
+
+    final String imagePath = isOnline
+        ? 'assets/images/icons/bus_Motion_True.png'
+        : 'assets/images/icons/bus_Motion_False.png';
+    final ByteData data = await rootBundle.load(imagePath);
+    final ui.Codec codec = await ui.instantiateImageCodec(
+      data.buffer.asUint8List(),
+      targetWidth: iconWidth.toInt(),
+    );
+    final ui.FrameInfo fi = await codec.getNextFrame();
+    final ui.Image image = fi.image;
+
+    final double canvasWidth = (textPainter.width > image.width) ? textPainter.width : image.width.toDouble();
+    final double canvasHeight = textPainter.height + image.height + padding;
+    
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder, Rect.fromLTWH(0, 0, canvasWidth, canvasHeight));
+
+    final textOffset = Offset((canvasWidth - textPainter.width) / 2, 0);
+    textPainter.paint(canvas, textOffset);
+
+    final imageOffset = Offset((canvasWidth - image.width) / 2, textPainter.height + padding);
+    canvas.drawImage(image, imageOffset, Paint());
+
+    final ui.Image finalImage = await pictureRecorder.endRecording().toImage(
+      canvasWidth.toInt(),
+      canvasHeight.toInt(),
+    );
+
+    final ByteData? byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
+    final Uint8List pngBytes = byteData!.buffer.asUint8List();
+    return BitmapDescriptor.fromBytes(pngBytes);
   }
 
   void searchRoutes(String query) {
@@ -102,12 +138,11 @@ class MapViewModel extends ChangeNotifier {
     } else {
       Map<String, dynamic>? things = await RequestServ.instance.fetchByUnit(cookie: _cookie, deviceId: route.id);
       var result = await RequestServ.instance.fetchStatusDevice(cookie: _cookie, deviceId: route.id);
-      // print("=> ${result["status"].toString().toUpperCase()}");
       route.lat = things!["latitude"];
       route.lng = things["longitude"];
       route.status = result["status"].toString().toUpperCase() == "ONLINE";
       _selectedRoutes.add(route);
-      _addOrUpdateMarker(route);
+      await _addOrUpdateMarker(route);
     }
     _updateCameraBounds();
     notifyListeners();
@@ -129,7 +164,6 @@ class MapViewModel extends ChangeNotifier {
     return _selectedRoutes.contains(route);
   }
 
-  /// Intance socket
   void initSocket() {
     final socket = SocketServ.instance;
     socket.onUnitUpdate = (data) {
@@ -138,13 +172,15 @@ class MapViewModel extends ChangeNotifier {
     socket.connect();
   }
 
-  void _addOrUpdateMarker(RouteModel unit) {
-    print("ADD OR UPDATE MARKER => ${unit.status}");
+  Future<void> _addOrUpdateMarker(RouteModel unit) async {
+
+    final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
+
     final marker = Marker(
       markerId: MarkerId(unit.id.toString()),
       position: LatLng(unit.lat, unit.lng),
       infoWindow: InfoWindow(title: unit.name),
-      icon: unit.status ? _unitIconOn! : _unitIconOff!,
+      icon: icon,
     );
     _markers.removeWhere((m) => m.markerId.value == unit.id.toString());
     _markers.add(marker);
@@ -172,10 +208,8 @@ class MapViewModel extends ChangeNotifier {
       final unit = _selectedRoutes[index];
       unit.lat = pos['latitude'] as double;
       unit.lng = pos['longitude'] as double;
-      print(pos["status"]);
-      // unit.status = pos["status"] == ""
 
-      _addOrUpdateMarker(unit);
+      await _addOrUpdateMarker(unit);
       _updateCameraBounds();
       notifyListeners();
     }

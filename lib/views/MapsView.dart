@@ -8,8 +8,6 @@ class MapsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Proporcionamos el ViewModel a este sub-árbol de widgets.
-    // El ViewModel se creará la primera vez que se construya este widget.
     return ChangeNotifierProvider(
       create: (_) => MapViewModel(),
       child: const _MapsViewContent(),
@@ -17,7 +15,6 @@ class MapsView extends StatelessWidget {
   }
 }
 
-// El contenido real de la vista, que puede acceder al ViewModel.
 class _MapsViewContent extends StatefulWidget {
   const _MapsViewContent();
 
@@ -34,17 +31,14 @@ class _MapsViewContentState extends State<_MapsViewContent> {
   );
 
   void _showUnitSelectionSheet() {
-    // Obtenemos el ViewModel sin escuchar cambios, ya que solo necesitamos llamar a un método.
     final viewModel = Provider.of<MapViewModel>(context, listen: false);
-    viewModel.fetchRoutes(); // El ViewModel se encargará de la lógica de carga.
+    viewModel.fetchRoutes();
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      // Usamos el builder para que el sheet tenga su propio contexto.
       builder: (_) {
-        // Devolvemos el mismo Provider para que el BottomSheet pueda acceder al ViewModel.
         return ChangeNotifierProvider.value(
           value: viewModel,
           child: Consumer<MapViewModel>(
@@ -159,7 +153,7 @@ class _MapsViewContentState extends State<_MapsViewContent> {
 
   @override
   Widget build(BuildContext context) {
-    // Usamos Provider.of para escuchar los cambios en el ViewModel.
+
     final viewModel = Provider.of<MapViewModel>(context);
 
     return Scaffold(

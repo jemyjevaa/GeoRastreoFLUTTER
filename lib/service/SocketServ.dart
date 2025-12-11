@@ -14,16 +14,13 @@ class SocketServ {
 
   Function(Map<String, dynamic> data)? onUnitUpdate;
 
-  /// Cargar cookie si no existe
   Future<void> loadSession() async {
     final serv = RequestServ.instance;
     _cookie = await serv.sessionGeovoySistem();
-    // print("COOKIE DEL SOCKET => $_cookie");
   }
 
-  /// Conectar WebSocket estándar
   Future<void> connect() async {
-    if (_ws != null) return; // ya conectado
+    if (_ws != null) return;
 
     if (_cookie == null) {
       await loadSession();
@@ -55,7 +52,6 @@ class SocketServ {
             final dynamic data = jsonDecode(message);
 
             if (!hasPositions(data)) {
-              // print("WS => El mensaje NO trae positions, se ignora → $data");
               return;
             }
 
@@ -65,7 +61,6 @@ class SocketServ {
               return;
             }
 
-            // Aquí ya es SEGURO llamar tu callback
             if (onUnitUpdate != null) {
               onUnitUpdate!(data);
             }
