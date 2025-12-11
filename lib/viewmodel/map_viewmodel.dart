@@ -127,7 +127,6 @@ class MapViewModel extends ChangeNotifier {
         _filteredRoutes = List.from(_allRoutes);
         initSocket();
       } else {
-
         debugPrint('Error fetching routes: ${response.statusCode}');
       }
     } catch (e) {
@@ -154,7 +153,6 @@ class MapViewModel extends ChangeNotifier {
         var result = await RequestServ.instance.fetchStatusDevice(cookie: _cookie, deviceId: route.id);
         route.lat = things!["latitude"];
         route.lng = things["longitude"];
-
         route.status = result["status"].toString().toUpperCase() == "ONLINE";
         _selectedRoutes.add(route);
         await _addOrUpdateMarker(route);
@@ -169,7 +167,6 @@ class MapViewModel extends ChangeNotifier {
   }
 
   Future<void> _addOrUpdateMarker(RouteModel unit) async {
-
     final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
 
     final marker = Marker(
@@ -177,6 +174,7 @@ class MapViewModel extends ChangeNotifier {
       position: LatLng(unit.lat, unit.lng),
       infoWindow: InfoWindow(title: unit.name),
       icon: icon,
+      anchor: const Offset(0.5, 1.0), // Ancla en el centro inferior
     );
     _markers.removeWhere((m) => m.markerId.value == unit.id.toString());
     _markers.add(marker);
@@ -192,12 +190,6 @@ class MapViewModel extends ChangeNotifier {
     final pos = positions.first;
     final deviceId = pos['deviceId'] as int;
 
-    _selectedRoutes.forEach((unit) {
-      if (unit.id == deviceId){
-
-      };
-    });
-
     final index = _selectedRoutes.indexWhere((unit) => unit.id == deviceId);
 
     if (index != -1) {
@@ -205,7 +197,7 @@ class MapViewModel extends ChangeNotifier {
       unit.lat = pos['latitude'] as double;
       unit.lng = pos['longitude'] as double;
       unit.status = pos["attributes"]['ignition'].toString().toUpperCase() == "TRUE" &&
-          pos["attributes"]['motion'].toString().toUpperCase() == "TRUE" ;
+          pos["attributes"]['motion'].toString().toUpperCase() == "TRUE";
 
       await _addOrUpdateMarker(unit);
       _updateCameraBounds();
@@ -214,7 +206,7 @@ class MapViewModel extends ChangeNotifier {
   }
 
   Future<BitmapDescriptor> _createCustomMarker(String text, bool isOnline) async {
-    final double iconWidth = Platform.isAndroid ? 115.0 : 180.0 ;
+    final double iconWidth = Platform.isAndroid ? 115.0 : 180.0;
     const double padding = 1.0;
 
     final TextPainter textPainter = TextPainter(
@@ -225,28 +217,22 @@ class MapViewModel extends ChangeNotifier {
     textPainter.text = TextSpan(
       text: text,
       style: TextStyle(
-        fontSize:  Platform.isAndroid ? 30 : 50,
+        fontSize: Platform.isAndroid ? 30 : 50,
         color: Colors.black,
       ),
     );
 
     textPainter.layout(maxWidth: iconWidth * 3.5);
-    print(text);
-    String text_icon = text.toUpperCase();
 
+    String text_icon = text.toUpperCase();
     final String imagePath = switch (text_icon) {
-      String s when s.startsWith("CMS") =>
-      isOnline
+      String s when s.startsWith("CMS") => isOnline
           ? 'assets/images/icons/van_Motion_true.png'
           : 'assets/images/icons/van_Motion_False.png',
-
-      String s when s.startsWith("B") =>
-      isOnline
+      String s when s.startsWith("B") => isOnline
           ? 'assets/images/icons/bus_Motion_True.png'
           : 'assets/images/icons/bus_Motion_False.png',
-
-      _ =>
-      isOnline
+      _ => isOnline
           ? 'assets/images/icons/car_Motion_true.png'
           : 'assets/images/icons/car_Motion_False.png',
     };
@@ -265,9 +251,11 @@ class MapViewModel extends ChangeNotifier {
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder, Rect.fromLTWH(0, 0, canvasWidth, canvasHeight));
 
+    // Dibuja el texto en la parte superior
     final textOffset = Offset((canvasWidth - textPainter.width) / 2, 0);
     textPainter.paint(canvas, textOffset);
 
+    // Dibuja la imagen debajo del texto
     final imageOffset = Offset((canvasWidth - image.width) / 2, textPainter.height + padding);
     canvas.drawImage(image, imageOffset, Paint());
 
@@ -278,7 +266,7 @@ class MapViewModel extends ChangeNotifier {
 
     final ByteData? byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
     final Uint8List pngBytes = byteData!.buffer.asUint8List();
+
     return BitmapDescriptor.fromBytes(pngBytes);
   }
-
 }
