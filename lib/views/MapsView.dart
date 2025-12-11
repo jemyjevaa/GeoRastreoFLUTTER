@@ -121,8 +121,10 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                                   itemBuilder: (context, index) {
                                     final route = model.filteredRoutes[index];
                                     final isSelected = model.isRouteSelected(route);
-                                    
-                                    return CheckboxListTile(
+                                    final isLoading = model.isRouteLoading(route);
+
+                                    return ListTile(
+                                      onTap: isLoading ? null : () => model.toggleRouteSelection(route),
                                       title: Text(
                                         route.name,
                                         style: TextStyle(
@@ -130,11 +132,22 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                                           fontWeight: FontWeight.w500,
                                         ),
                                       ),
-                                      value: isSelected,
-                                      activeColor: model.colorAmarillo,
-                                      onChanged: (bool? value) {
-                                        model.toggleRouteSelection(route);
-                                      },
+                                      trailing: isLoading
+                                          ? SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(
+                                                color: model.colorAmarillo,
+                                                strokeWidth: 2.5,
+                                              ),
+                                            )
+                                          : Checkbox(
+                                              value: isSelected,
+                                              activeColor: model.colorAmarillo,
+                                              onChanged: (bool? value) {
+                                                model.toggleRouteSelection(route);
+                                              },
+                                            ),
                                     );
                                   },
                                 ),

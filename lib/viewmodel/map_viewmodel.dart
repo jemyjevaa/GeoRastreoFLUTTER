@@ -21,6 +21,7 @@ class MapViewModel extends ChangeNotifier {
   List<RouteModel> _allRoutes = [];
   List<RouteModel> _filteredRoutes = [];
   final List<RouteModel> _selectedRoutes = [];
+  final List<int> _loadingRoutes = [];
 
   GoogleMapController? _mapController;
   bool _isLoadingRoutes = false;
@@ -43,6 +44,8 @@ class MapViewModel extends ChangeNotifier {
   bool isRouteSelected(RouteModel route) {
     return _selectedRoutes.contains(route);
   }
+
+  bool isRouteLoading(RouteModel route) => _loadingRoutes.contains(route.id);
 
   void onMapCreated(GoogleMapController controller) {
     _mapController = controller;
@@ -140,21 +143,33 @@ class MapViewModel extends ChangeNotifier {
     if (_selectedRoutes.contains(route)) {
       _selectedRoutes.remove(route);
       _markers.removeWhere((m) => m.markerId.value == route.id.toString());
+      _updateCameraBounds();
+      notifyListeners();
     } else {
-      Map<String, dynamic>? things = await RequestServ.instance.fetchByUnit(cookie: _cookie, deviceId: route.id);
-      var result = await RequestServ.instance.fetchStatusDevice(cookie: _cookie, deviceId: route.id);
-      route.lat = things!["latitude"];
-      route.lng = things["longitude"];
-      route.status = result["status"].toString().toUpperCase() == "ONLINE";
-      _selectedRoutes.add(route);
-      await _addOrUpdateMarker(route);
+      _loadingRoutes.add(route.id);
+      notifyListeners();
+
+      try {
+        Map<String, dynamic>? things = await RequestServ.instance.fetchByUnit(cookie: _cookie, deviceId: route.id);
+        var result = await RequestServ.instance.fetchStatusDevice(cookie: _cookie, deviceId: route.id);
+        route.lat = things!["latitude"];
+        route.lng = things["longitude"];
+        print("result[status] => ${result["status"]}");
+        route.status = result["status"].toString().toUpperCase() == "ONLINE";
+        _selectedRoutes.add(route);
+        await _addOrUpdateMarker(route);
+      } catch (e) {
+        debugPrint('Failed to fetch route details: $e');
+      } finally {
+        _loadingRoutes.remove(route.id);
+        _updateCameraBounds();
+        notifyListeners();
+      }
     }
-    _updateCameraBounds();
-    notifyListeners();
   }
 
   Future<void> _addOrUpdateMarker(RouteModel unit) async {
-
+    print("_addOrUpdateMarker => ${unit.status}");
     final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
 
     final marker = Marker(
@@ -189,6 +204,8 @@ class MapViewModel extends ChangeNotifier {
       final unit = _selectedRoutes[index];
       unit.lat = pos['latitude'] as double;
       unit.lng = pos['longitude'] as double;
+      unit.status = pos["attributes"]['ignition'].toString().toUpperCase() == "TRUE" &&
+          pos["attributes"]['motion'].toString().toUpperCase() == "TRUE" ;
 
       await _addOrUpdateMarker(unit);
       _updateCameraBounds();
