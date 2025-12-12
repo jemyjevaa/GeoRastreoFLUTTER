@@ -1,15 +1,18 @@
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../models/route_model.dart';
 import '../service/RequestServ.dart';
 import '../service/SocketServ.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+
 
 class MapViewModel extends ChangeNotifier {
 
@@ -26,8 +29,10 @@ class MapViewModel extends ChangeNotifier {
   GoogleMapController? _mapController;
   bool _isLoadingRoutes = false;
   String _searchQuery = '';
+  bool _isBottomSheetOpen = false;
 
   bool get isLoadingRoutes => _isLoadingRoutes;
+  bool get isBottomSheetOpen => _isBottomSheetOpen;
 
   List<RouteModel> get selectedRoutes => _selectedRoutes;
   List<RouteModel> get filteredRoutes => _filteredRoutes;
@@ -40,6 +45,20 @@ class MapViewModel extends ChangeNotifier {
   final Set<Marker> _markers = {};
   Set<Marker> get markers => _markers;
 
+  final Map<int, Timer> _animationTimers = {};
+
+
+  void toggleBottomSheet() {
+    _isBottomSheetOpen = !_isBottomSheetOpen;
+    if (!_isBottomSheetOpen) {
+      _searchQuery = '';
+    }else{
+      _filteredRoutes = _allRoutes
+          .toList();
+    }
+
+    notifyListeners();
+  }
 
   bool isRouteSelected(RouteModel route) {
     return _selectedRoutes.contains(route);
@@ -64,6 +83,8 @@ class MapViewModel extends ChangeNotifier {
     if (_selectedRoutes.length == _allRoutes.length) {
       _selectedRoutes.clear();
       _markers.clear();
+      _animationTimers.forEach((_, timer) => timer.cancel());
+      _animationTimers.clear();
     } else {
       _selectedRoutes.clear();
       _selectedRoutes.addAll(_allRoutes);
@@ -82,6 +103,11 @@ class MapViewModel extends ChangeNotifier {
 
   void _updateCameraBounds() {
     if (_mapController == null || _selectedRoutes.isEmpty) return;
+
+    if (_allRoutes.isNotEmpty && _selectedRoutes.length == _allRoutes.length) {
+      return;
+    }
+
     double positionCam = Platform.isAndroid ? 15.9 : 15.0;
 
     if (_selectedRoutes.length == 1) {
@@ -107,6 +133,7 @@ class MapViewModel extends ChangeNotifier {
 
       _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, positionCam));
     }
+
   }
 
   Future<void> fetchRoutes() async {
@@ -142,7 +169,16 @@ class MapViewModel extends ChangeNotifier {
     if (_selectedRoutes.contains(route)) {
       _selectedRoutes.remove(route);
       _markers.removeWhere((m) => m.markerId.value == route.id.toString());
+      _animationTimers[route.id]?.cancel();
+      _animationTimers.remove(route.id);
       _updateCameraBounds();
+
+      Fluttertoast.showToast(
+        msg: "Unidad removida del mapa",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+
       notifyListeners();
     } else {
       _loadingRoutes.add(route.id);
@@ -161,23 +197,34 @@ class MapViewModel extends ChangeNotifier {
       } finally {
         _loadingRoutes.remove(route.id);
         _updateCameraBounds();
+
+        Fluttertoast.showToast(
+          msg: "Unidad mostrada en el mapa",
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+
         notifyListeners();
       }
     }
+
   }
 
-  Future<void> _addOrUpdateMarker(RouteModel unit) async {
-    final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
-
+  void _updateMarker(RouteModel unit, BitmapDescriptor icon, {LatLng? position}) {
     final marker = Marker(
       markerId: MarkerId(unit.id.toString()),
-      position: LatLng(unit.lat, unit.lng),
+      position: position ?? LatLng(unit.lat, unit.lng),
       infoWindow: InfoWindow(title: unit.name),
       icon: icon,
-      anchor: const Offset(0.5, 1.0), // Ancla en el centro inferior
+      anchor: const Offset(0.5, 1.0),
     );
     _markers.removeWhere((m) => m.markerId.value == unit.id.toString());
     _markers.add(marker);
+  }
+
+  Future<void> _addOrUpdateMarker(RouteModel unit, {LatLng? position}) async {
+    final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
+    _updateMarker(unit, icon, position: position);
   }
 
   Future<void> _updateUnitPosition(Map<String, dynamic> data) async {
@@ -194,14 +241,48 @@ class MapViewModel extends ChangeNotifier {
 
     if (index != -1) {
       final unit = _selectedRoutes[index];
-      unit.lat = pos['latitude'] as double;
-      unit.lng = pos['longitude'] as double;
+      final oldLatLng = LatLng(unit.lat, unit.lng);
+      final newLatLng = LatLng(pos['latitude'] as double, pos['longitude'] as double);
+
       unit.status = pos["attributes"]['ignition'].toString().toUpperCase() == "TRUE" &&
           pos["attributes"]['motion'].toString().toUpperCase() == "TRUE";
 
-      await _addOrUpdateMarker(unit);
-      _updateCameraBounds();
-      notifyListeners();
+      if (_animationTimers.containsKey(deviceId)) {
+        _animationTimers[deviceId]!.cancel();
+      }
+
+      final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
+
+      const animationDuration = Duration(seconds: 2);
+      const framesPerSecond = 30;
+      final totalFrames = animationDuration.inSeconds * framesPerSecond;
+      var currentFrame = 0;
+
+      final latTween = Tween(begin: oldLatLng.latitude, end: newLatLng.latitude);
+      final lngTween = Tween(begin: oldLatLng.longitude, end: newLatLng.longitude);
+
+      _animationTimers[deviceId] = Timer.periodic(Duration(milliseconds: 1000 ~/ framesPerSecond), (timer) {
+        currentFrame++;
+        final t = currentFrame / totalFrames;
+
+        final animatedLatLng = LatLng(
+          latTween.transform(t),
+          lngTween.transform(t),
+        );
+
+        _updateMarker(unit, icon, position: animatedLatLng);
+        notifyListeners();
+
+        if (currentFrame >= totalFrames) {
+          timer.cancel();
+          _animationTimers.remove(deviceId);
+          unit.lat = newLatLng.latitude;
+          unit.lng = newLatLng.longitude;
+          _updateMarker(unit, icon, position: newLatLng);
+          _updateCameraBounds();
+          notifyListeners();
+        }
+      });
     }
   }
 
@@ -222,18 +303,18 @@ class MapViewModel extends ChangeNotifier {
       ),
     );
 
-    textPainter.layout(maxWidth: iconWidth * 3.5);
+    textPainter.layout(maxWidth: iconWidth * 1.5);
 
     String text_icon = text.toUpperCase();
     final String imagePath = switch (text_icon) {
       String s when s.startsWith("CMS") => isOnline
-          ? 'assets/images/icons/van_Motion_true.png'
+          ? 'assets/images/icons/van_Motion_True.png'
           : 'assets/images/icons/van_Motion_False.png',
       String s when s.startsWith("B") => isOnline
           ? 'assets/images/icons/bus_Motion_True.png'
           : 'assets/images/icons/bus_Motion_False.png',
       _ => isOnline
-          ? 'assets/images/icons/car_Motion_true.png'
+          ? 'assets/images/icons/car_Motion_True.png'
           : 'assets/images/icons/car_Motion_False.png',
     };
 
@@ -251,11 +332,9 @@ class MapViewModel extends ChangeNotifier {
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder, Rect.fromLTWH(0, 0, canvasWidth, canvasHeight));
 
-    // Dibuja el texto en la parte superior
     final textOffset = Offset((canvasWidth - textPainter.width) / 2, 0);
     textPainter.paint(canvas, textOffset);
 
-    // Dibuja la imagen debajo del texto
     final imageOffset = Offset((canvasWidth - image.width) / 2, textPainter.height + padding);
     canvas.drawImage(image, imageOffset, Paint());
 

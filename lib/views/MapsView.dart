@@ -103,11 +103,15 @@ class _MapsViewContentState extends State<_MapsViewContent> {
     }
   }
 
-  void _showUnitSelectionSheet() {
+  void _showUnitSelectionSheet() async {
     final viewModel = Provider.of<MapViewModel>(context, listen: false);
+
+    if (viewModel.isBottomSheetOpen) return;
+
+    viewModel.toggleBottomSheet();
     viewModel.fetchRoutes();
 
-    showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -235,6 +239,8 @@ class _MapsViewContentState extends State<_MapsViewContent> {
         );
       },
     );
+
+    viewModel.toggleBottomSheet();
   }
 
   @override

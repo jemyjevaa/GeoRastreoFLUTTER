@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import '../models/server_config.dart';
 import '../models/user_session.dart';
 
 class AuthService {
