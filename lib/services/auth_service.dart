@@ -144,6 +144,11 @@ class AuthService {
           );
           await _storage.write(key: 'auth_token', value: session.token);
           
+          print('✓ Sesión guardada:');
+          print('  - Email: ${sessionCompleta.email}');
+          print('  - Mantener sesión: ${mantenerSesion ? "SÍ" : "NO"}');
+          print('  - sesionActiva: ${sessionCompleta.sesionActiva}');
+          
           return sessionCompleta;
         } catch (e) {
           print('Error parseando usuario: $e');
@@ -167,11 +172,34 @@ class AuthService {
   }
   
   Future<UserSession?> getUserSession() async {
-    final sessionJson = await _storage.read(key: 'user_session');
-    if (sessionJson != null) {
-      return UserSession.fromJson(jsonDecode(sessionJson));
+    try {
+      final sessionJson = await _storage.read(key: 'user_session');
+      print('📖 Leyendo sesión guardada...');
+      
+      if (sessionJson != null) {
+        final Map<String, dynamic> data = jsonDecode(sessionJson);
+        print('✓ Sesión encontrada: ${data['email']}');
+        print('✓ Sesión activa: ${data['sesionActiva']}');
+        
+        // Reconstruir UserSession desde el JSON completo guardado
+        return UserSession(
+          id: data['id'],
+          email: data['email'],
+          name: data['name'],
+          login: data['login'],
+          administrator: data['administrator'],
+          token: data['token'] ?? '',
+          basicAuthorization: data['basicAuthorization'],
+          sesionActiva: data['sesionActiva'],
+        );
+      }
+      
+      print('✗ No se encontró sesión guardada');
+      return null;
+    } catch (e) {
+      print('Error leyendo sesión: $e');
+      return null;
     }
-    return null;
   }
   
   Future<void> logout() async {

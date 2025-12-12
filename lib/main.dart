@@ -53,6 +53,7 @@ class _AuthCheckerState extends State<AuthChecker> {
   }
 
   Future<void> _checkSession() async {
+    print('🔍 Verificando sesión al iniciar app...');
     final session = await _authService.getUserSession();
     
     if (mounted) {
@@ -60,6 +61,12 @@ class _AuthCheckerState extends State<AuthChecker> {
         _hasSession = session != null && session.sesionActiva == '1';
         _isChecking = false;
       });
+      
+      if (_hasSession) {
+        print('✓ Sesión válida encontrada - Navegando a MapsView');
+      } else {
+        print('✗ No hay sesión válida - Mostrando LoginView');
+      }
     }
   }
 
