@@ -19,6 +19,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^2.0.0
+  fluttertoast: ^9.0.0
   socket_io_client: ^2.0.3+1
 
 flutter:
