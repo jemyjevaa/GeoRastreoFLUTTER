@@ -24,16 +24,18 @@ class LoginViewModel extends ChangeNotifier {
       }
 
       // 2. Discovery: Buscar URL del servidor
-      final serverUrl = await _authService.findServerUrl(serviceName);
+      /*final serverUrl = await _authService.findServerUrl(serviceName);
       if (serverUrl == null) {
         _errorMessage = 'Servidor no encontrado para este dominio';
         _setLoading(false);
         return false;
       }
-
+       */
+      String serverUrl = "https://rastreobusmen.geovoy.com";
       // 3. Session: Login con mantenerSesion
+      // print("url => $serverUrl");
       final session = await _authService.login(
-        serverUrl, 
+        serverUrl,
         email, 
         password,
         mantenerSesion: mantenerSesion,
