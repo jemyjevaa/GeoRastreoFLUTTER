@@ -19,7 +19,7 @@ class MapViewModel extends ChangeNotifier {
   // Estado
   final Color colorAmarillo = const Color(0xFFF69D32);
   final Color colorAzulFuerte = const Color(0xFF14143A);
-  final String _cookie = "JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
+  final String _cookie = "JSESSIONID=node0stvdecnexxc9xg2oqepu3lp3164716.node0"; //"JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
 
   List<RouteModel> _allRoutes = [];
   List<RouteModel> _filteredRoutes = [];
@@ -38,6 +38,8 @@ class MapViewModel extends ChangeNotifier {
   List<RouteModel> get filteredRoutes => _filteredRoutes;
   int get totalRoutesCount => _allRoutes.length;
   int get selectedRoutesCount => _selectedRoutes.length;
+  static const String _apiUser = 'apinstaladores@geovoy.com';
+  static const String _apiPass = 'Instaladores*9';
 
 
   GoogleMapController? get mapController => _mapController;
@@ -136,6 +138,8 @@ class MapViewModel extends ChangeNotifier {
 
   }
 
+
+
   Future<void> fetchRoutes() async {
     if (_allRoutes.isNotEmpty) return;
 
@@ -143,13 +147,18 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
+      print("hola");
+      final String basicAuth =
+          'Basic ${base64Encode(utf8.encode('$_apiUser:$_apiPass'))}';
       final response = await http.get(
         Uri.parse('https://rastreobusmen.geovoy.com/api/devices'),
-        headers: {'Cookie': _cookie},
+        // headers: {'Cookie': _cookie},
+        headers: {'Authorization': basicAuth},
       );
-
+      print(response.statusCode);
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+        print(data);
         _allRoutes = data.map((json) => RouteModel.fromJson(json)).toList();
         _filteredRoutes = List.from(_allRoutes);
         initSocket();

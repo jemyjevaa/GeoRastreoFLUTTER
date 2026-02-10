@@ -92,7 +92,7 @@ class AuthService {
           contentType: Headers.formUrlEncodedContentType,
         ),
       );
-
+    print("response => $response");
       if (response.statusCode == 200) {
         // Paso 2: Capturar la cookie de sesión
         final cookies = response.headers['set-cookie'];
