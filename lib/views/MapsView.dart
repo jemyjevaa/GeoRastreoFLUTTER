@@ -247,6 +247,7 @@ class _MapsViewContentState extends State<_MapsViewContent> {
   Widget build(BuildContext context) {
 
     final viewModel = Provider.of<MapViewModel>(context);
+    viewModel.updateContext(context);
 
     return Scaffold(
       key: _scaffoldKey,

@@ -209,7 +209,41 @@ class RequestServ {
     }
   }
 
+  Future<dynamic> fetchReaderEvents({
+    required List<int> deviceIds,
+    required String fechaInicio,
+    required String fechaFin,
+  }) async {
+    try {
+      final url = Uri.parse("https://rastreobusmen.geovoy.com:4000/api/eventoslectorasdatos");
 
+      final body = jsonEncode({
+        "deviceid": deviceIds,
+        "groupid": [],
+        "FechaInicio": fechaInicio,
+        "FechaFin": fechaFin,
+      });
+
+      final response = await http.post(
+        url,
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": basicAuth,
+        },
+        body: body,
+      ).timeout(const Duration(seconds: 60));
+
+      if (response.statusCode != 200) {
+        print("HTTP error fetchReaderEvents: ${response.statusCode}");
+        return null;
+      }
+
+      return jsonDecode(response.body);
+    } catch (e) {
+      print("Error fetchReaderEvents: $e");
+      return null;
+    }
+  }
 
 }
 

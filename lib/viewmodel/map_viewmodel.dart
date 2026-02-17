@@ -12,6 +12,9 @@ import '../models/route_model.dart';
 import '../service/RequestServ.dart';
 import '../service/SocketServ.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:intl/intl.dart';
+import '../models/reader_event_model.dart';
+import '../views/reader_events_bottom_sheet.dart';
 
 
 class MapViewModel extends ChangeNotifier {
@@ -219,6 +222,12 @@ class MapViewModel extends ChangeNotifier {
 
   }
 
+  BuildContext? _currentContext;
+
+  void updateContext(BuildContext context) {
+    _currentContext = context;
+  }
+
   void _updateMarker(RouteModel unit, BitmapDescriptor icon, {LatLng? position}) {
     final marker = Marker(
       markerId: MarkerId(unit.id.toString()),
@@ -226,6 +235,11 @@ class MapViewModel extends ChangeNotifier {
       infoWindow: InfoWindow(title: unit.name),
       icon: icon,
       anchor: const Offset(0.5, 1.0),
+      onTap: () {
+        if (_currentContext != null) {
+          showReaderEvents(unit.id, unit.name, _currentContext!);
+        }
+      },
     );
     _markers.removeWhere((m) => m.markerId.value == unit.id.toString());
     _markers.add(marker);
@@ -301,7 +315,7 @@ class MapViewModel extends ChangeNotifier {
 
     final TextPainter textPainter = TextPainter(
       textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
     );
 
     textPainter.text = TextSpan(
@@ -356,5 +370,28 @@ class MapViewModel extends ChangeNotifier {
     final Uint8List pngBytes = byteData!.buffer.asUint8List();
 
     return BitmapDescriptor.fromBytes(pngBytes);
+  }
+
+  Future<void> showReaderEvents(int deviceId, String unitName, BuildContext context) async {
+    final now = DateTime.now();
+    final yesterday = now.subtract(const Duration(hours: 24));
+    final formatter = DateFormat('yyyy-MM-dd HH:mm');
+    
+    final fechaInicio = formatter.format(yesterday);
+    final fechaFin = formatter.format(now);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return ReaderEventsBottomSheet(
+          deviceId: deviceId,
+          unitName: unitName,
+          fechaInicio: fechaInicio,
+          fechaFin: fechaFin,
+        );
+      },
+    );
   }
 }
