@@ -111,6 +111,36 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                         const SizedBox(height: 15),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<int?>(
+                                value: model.selectedGroupId,
+                                hint: const Text('Filtrar por grupo/empresa...'),
+                                isExpanded: true,
+                                icon: Icon(Icons.business, color: model.colorAzulFuerte),
+                                items: [
+                                  const DropdownMenuItem<int?>(
+                                    value: null,
+                                    child: Text('Todos los grupos'),
+                                  ),
+                                  ...model.allGroups.map((group) => DropdownMenuItem<int?>(
+                                        value: group.id,
+                                        child: Text(group.name),
+                                      )),
+                                ],
+                                onChanged: model.filterByGroup,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: TextField(
                             decoration: InputDecoration(
                               hintText: 'Buscar ruta...',
@@ -156,7 +186,14 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                                         route.name,
                                         style: TextStyle(
                                           color: model.colorAzulFuerte,
-                                          fontWeight: FontWeight.w500,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        model.getGroupName(route.groupId),
+                                        style: TextStyle(
+                                          color: Colors.grey[600],
+                                          fontSize: 12,
                                         ),
                                       ),
                                       trailing: isLoading

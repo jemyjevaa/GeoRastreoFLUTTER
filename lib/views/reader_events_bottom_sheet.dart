@@ -3,16 +3,18 @@ import 'package:intl/intl.dart';
 import '../models/reader_event_model.dart';
 import '../service/RequestServ.dart';
 
+import '../models/route_model.dart';
+
 class ReaderEventsBottomSheet extends StatefulWidget {
-  final int deviceId;
-  final String unitName;
+  final RouteModel route;
+  final String groupName;
   final String fechaInicio;
   final String fechaFin;
 
   const ReaderEventsBottomSheet({
     super.key,
-    required this.deviceId,
-    required this.unitName,
+    required this.route,
+    required this.groupName,
     required this.fechaInicio,
     required this.fechaFin,
   });
@@ -69,7 +71,7 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
     try {
       // 1. Petición del rango seleccionado
       final responseRange = await RequestServ.instance.fetchReaderEvents(
-        deviceIds: [widget.deviceId],
+        deviceIds: [widget.route.id],
         fechaInicio: _formatter.format(_dtInicio),
         fechaFin: _formatter.format(_dtFin),
       ).timeout(const Duration(seconds: 60));
@@ -78,7 +80,7 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
       final now = DateTime.now();
       final todayStart = DateTime(now.year, now.month, now.day, 0, 0);
       final responseToday = await RequestServ.instance.fetchReaderEvents(
-        deviceIds: [widget.deviceId],
+        deviceIds: [widget.route.id],
         fechaInicio: _formatter.format(todayStart),
         fechaFin: _formatter.format(now),
       ).timeout(const Duration(seconds: 60));
@@ -207,25 +209,79 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
                   children: [
-                    const SizedBox(width: 48), 
-                    Expanded(
-                      child: Text(
-                        'Eventos: ${widget.unitName}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF14143A),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const SizedBox(width: 48), 
+                        Expanded(
+                          child: Text(
+                            widget.route.name,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF14143A),
+                            ),
+                          ),
                         ),
+                        IconButton(
+                          onPressed: _fetchData,
+                          icon: const Icon(Icons.refresh, color: Color(0xFF14143A)),
+                          tooltip: 'Actualizar',
+                        ),
+                      ],
+                    ),
+                    Text(
+                      widget.groupName,
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    IconButton(
-                      onPressed: _fetchData,
-                      icon: const Icon(Icons.refresh, color: Color(0xFF14143A)),
-                      tooltip: 'Actualizar',
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: widget.route.status ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: widget.route.status ? Colors.green : Colors.red),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.circle,
+                                size: 10,
+                                color: widget.route.status ? Colors.green : Colors.red,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                widget.route.status ? 'ONLINE' : 'OFFLINE',
+                                style: TextStyle(
+                                  color: widget.route.status ? Colors.green : Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 15),
+                        Text(
+                          '${widget.route.lat.toStringAsFixed(5)}, ${widget.route.lng.toStringAsFixed(5)}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[500],
+                            fontFamily: 'Courier',
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

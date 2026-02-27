@@ -29,10 +29,13 @@ class MapViewModel extends ChangeNotifier {
   GoogleMapController? _mapController;
   bool _isLoadingRoutes = false;
   String _searchQuery = '';
+  int? _selectedGroupId;
   bool _isBottomSheetOpen = false;
 
   bool get isLoadingRoutes => _isLoadingRoutes;
   bool get isBottomSheetOpen => _isBottomSheetOpen;
+  int? get selectedGroupId => _selectedGroupId;
+  List<GroupModel> get allGroups => _allGroups;
 
   List<RouteModel> get selectedRoutes => _selectedRoutes;
   List<RouteModel> get filteredRoutes => _filteredRoutes;
@@ -68,11 +71,31 @@ class MapViewModel extends ChangeNotifier {
 
   void searchRoutes(String query) {
     _searchQuery = query;
+    _applyFilters();
+  }
+
+  void filterByGroup(int? groupId) {
+    _selectedGroupId = groupId;
+    _applyFilters();
+  }
+
+  void _applyFilters() {
     _filteredRoutes = _allRoutes
-        .where((route) =>
-            route.name.toLowerCase().contains(_searchQuery.toLowerCase()))
+        .where((route) {
+          final matchesSearch = route.name.toLowerCase().contains(_searchQuery.toLowerCase());
+          final matchesGroup = _selectedGroupId == null || route.groupId == _selectedGroupId;
+          return matchesSearch && matchesGroup;
+        })
         .toList();
     notifyListeners();
+  }
+
+  String getGroupName(int groupId) {
+    try {
+      return _allGroups.firstWhere((g) => g.id == groupId).name;
+    } catch (_) {
+      return "Empresa no asignada";
+    }
   }
 
   void toggleSelectAll() {
@@ -249,7 +272,7 @@ class MapViewModel extends ChangeNotifier {
       anchor: const Offset(0.5, 1.0),
       onTap: () {
         if (_currentContext != null) {
-          showReaderEvents(unit.id, unit.name, _currentContext!);
+          showReaderEvents(unit, _currentContext!);
         }
       },
     );
@@ -322,7 +345,7 @@ class MapViewModel extends ChangeNotifier {
   }
 
   Future<BitmapDescriptor> _createCustomMarker(String text, bool isOnline) async {
-    final double iconWidth = Platform.isAndroid ? 115.0 : 180.0;
+    final double iconWidth = Platform.isAndroid ? 45.0 : 70.0;
     const double padding = 1.0;
 
     final TextPainter textPainter = TextPainter(
@@ -333,7 +356,7 @@ class MapViewModel extends ChangeNotifier {
     textPainter.text = TextSpan(
       text: text,
       style: TextStyle(
-        fontSize: Platform.isAndroid ? 30 : 50,
+        fontSize: Platform.isAndroid ? 12 : 18,
         color: Colors.black,
       ),
     );
@@ -384,7 +407,7 @@ class MapViewModel extends ChangeNotifier {
     return BitmapDescriptor.bytes(byteData.buffer.asUint8List());
   }
 
-  Future<void> showReaderEvents(int deviceId, String unitName, BuildContext context) async {
+  Future<void> showReaderEvents(RouteModel route, BuildContext context) async {
     final now = DateTime.now();
     final from = DateTime(now.year, now.month, now.day, 0, 0, 0);
     final to = DateTime(now.year, now.month, now.day, 23, 59, 59);
@@ -398,8 +421,8 @@ class MapViewModel extends ChangeNotifier {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => ReaderEventsBottomSheet(
-        deviceId: deviceId,
-        unitName: unitName,
+        route: route,
+        groupName: getGroupName(route.groupId),
         fechaInicio: fromStr,
         fechaFin: toStr,
       ),
