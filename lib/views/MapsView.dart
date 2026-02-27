@@ -1,8 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:http/http.dart' as http;
 import '../services/auth_service.dart';
 import '../models/user_session.dart';
 import '../viewmodel/map_viewmodel.dart';
@@ -30,17 +28,8 @@ class _MapsViewContent extends StatefulWidget {
 class _MapsViewContentState extends State<_MapsViewContent> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   
-  GoogleMapController? _mapController;
-  
-  
-  List<dynamic> _allRoutes = [];
-  List<dynamic> _filteredRoutes = [];
-  final List<dynamic> _selectedRoutes = [];
-  bool _isLoadingRoutes = false;
-  
   final AuthService _authService = AuthService();
   UserSession? _userSession;
-  String _cookie = "JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(20.543508165491687, -103.47583907776028),
@@ -51,57 +40,19 @@ class _MapsViewContentState extends State<_MapsViewContent> {
   void initState() {
     super.initState();
     _loadUserSession();
+
   }
 
   Future<void> _loadUserSession() async {
     final session = await _authService.getUserSession();
-    final cookie = await _authService.getCookie();
     
     if (mounted) {
       setState(() {
         _userSession = session;
-        if (cookie != null) {
-          _cookie = cookie;
-        }
       });
     }
   }
 
-  void _onMapCreated(GoogleMapController controller) {
-    _mapController = controller;
-  }
-
-  Future<void> _fetchRoutes() async {
-    setState(() {
-      _isLoadingRoutes = true;
-    });
-
-    try {
-      final response = await http.get(
-        Uri.parse('https://rastreobusmen.geovoy.com/api/devices'),
-        headers: {'Cookie': _cookie},
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        setState(() {
-          _allRoutes = data;
-          _filteredRoutes = data;
-        });
-      } else {
-        // Manejar error
-        debugPrint('Error fetching routes: ${response.statusCode}');
-      }
-    } catch (e) {
-      debugPrint('Error fetching routes: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingRoutes = false;
-        });
-      }
-    }
-  }
 
   void _showUnitSelectionSheet() async {
     final viewModel = Provider.of<MapViewModel>(context, listen: false);
@@ -120,7 +71,6 @@ class _MapsViewContentState extends State<_MapsViewContent> {
           value: viewModel,
           child: Consumer<MapViewModel>(
             builder: (sheetContext, model, child) {
-              // El resto de tu UI para el BottomSheet...
               return DraggableScrollableSheet(
                 initialChildSize: 0.6,
                 minChildSize: 0.4,
@@ -245,9 +195,12 @@ class _MapsViewContentState extends State<_MapsViewContent> {
 
   @override
   Widget build(BuildContext context) {
-
     final viewModel = Provider.of<MapViewModel>(context);
-    viewModel.updateContext(context);
+    
+    // Actualizamos el contexto de forma segura después de que el frame se dibuje
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) viewModel.updateContext(context);
+    });
 
     return Scaffold(
       key: _scaffoldKey,
@@ -283,7 +236,6 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                 ),
               ),
             ),
-            
             const Spacer(),
             const Divider(),
             ListTile(

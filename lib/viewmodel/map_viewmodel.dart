@@ -1,30 +1,27 @@
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geo_rastreo/service/user_session_cache.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import '../models/route_model.dart';
+import '../models/group_model.dart';
 import '../service/RequestServ.dart';
 import '../service/SocketServ.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
-import '../models/reader_event_model.dart';
 import '../views/reader_events_bottom_sheet.dart';
 
-
 class MapViewModel extends ChangeNotifier {
-
   // Estado
   final Color colorAmarillo = const Color(0xFFF69D32);
   final Color colorAzulFuerte = const Color(0xFF14143A);
-  final String _cookie = "JSESSIONID=node0stvdecnexxc9xg2oqepu3lp3164716.node0"; //"JSESSIONID=node07741a99m8jq11isjf5hdfnvoa22686.node0";
-
+  
   List<RouteModel> _allRoutes = [];
+  List<GroupModel> _allGroups = [];
   List<RouteModel> _filteredRoutes = [];
   final List<RouteModel> _selectedRoutes = [];
   final List<int> _loadingRoutes = [];
@@ -41,9 +38,6 @@ class MapViewModel extends ChangeNotifier {
   List<RouteModel> get filteredRoutes => _filteredRoutes;
   int get totalRoutesCount => _allRoutes.length;
   int get selectedRoutesCount => _selectedRoutes.length;
-  static const String _apiUser = 'apinstaladores@geovoy.com';
-  static const String _apiPass = 'Instaladores*9';
-
 
   GoogleMapController? get mapController => _mapController;
 
@@ -52,16 +46,13 @@ class MapViewModel extends ChangeNotifier {
 
   final Map<int, Timer> _animationTimers = {};
 
-
   void toggleBottomSheet() {
     _isBottomSheetOpen = !_isBottomSheetOpen;
     if (!_isBottomSheetOpen) {
       _searchQuery = '';
-    }else{
-      _filteredRoutes = _allRoutes
-          .toList();
+    } else {
+      _filteredRoutes = _allRoutes.toList();
     }
-
     notifyListeners();
   }
 
@@ -138,10 +129,7 @@ class MapViewModel extends ChangeNotifier {
 
       _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, positionCam));
     }
-
   }
-
-
 
   Future<void> fetchRoutes() async {
     if (_allRoutes.isNotEmpty) return;
@@ -150,29 +138,50 @@ class MapViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
-      print("hola");
-      final String basicAuth =
-          'Basic ${base64Encode(utf8.encode('$_apiUser:$_apiPass'))}';
-      final response = await http.get(
-        Uri.parse('https://rastreobusmen.geovoy.com/api/devices'),
-        // headers: {'Cookie': _cookie},
+      final String? basicAuth = UserSessionCache().pwdEncode;
+      
+      if (basicAuth == null || basicAuth.isEmpty) {
+        _isLoadingRoutes = false;
+        notifyListeners();
+        return;
+      }
+
+      // region Groups _allGroups
+      final responseGroups = await http.get(
+        Uri.parse('https://rastreobusmen.geovoy.com/api/groups'),
         headers: {'Authorization': basicAuth},
-      );
-      print(response.statusCode);
-      if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
-        print(data);
-        _allRoutes = data.map((json) => RouteModel.fromJson(json)).toList();
-        _filteredRoutes = List.from(_allRoutes);
+      ).timeout(const Duration(seconds: 15));
+
+      if (responseGroups.statusCode == 200) {
+        final List<dynamic> data = json.decode(responseGroups.body);
+        _allGroups = data.map((json) => GroupModel.fromJson(json)).toList();
         initSocket();
       } else {
-        debugPrint('Error fetching routes: ${response.statusCode}');
+        debugPrint('Error fetching groups: ${responseGroups.statusCode}');
       }
+      // endregion Groups
+
+      // region Device
+      final responseDevice = await http.get(
+        Uri.parse('https://rastreobusmen.geovoy.com/api/devices'),
+        headers: {'Authorization': basicAuth},
+      ).timeout(const Duration(seconds: 15));
+
+      if (responseDevice.statusCode == 200) {
+        final List<dynamic> data = json.decode(responseDevice.body);
+        _allRoutes = data.map((json) => RouteModel.fromJson(json)).toList();
+        _filteredRoutes = List.from(_allRoutes);
+      } else {
+        debugPrint('Error fetching devices: ${responseDevice.statusCode}');
+      }
+      // endregion Device
+
     } catch (e) {
       debugPrint('Error fetching routes: $e');
     } finally {
+      print("_allGroups => $_allGroups");
+      print("_allRoutes => $_allRoutes");
       _isLoadingRoutes = false;
-
       notifyListeners();
     }
   }
@@ -197,11 +206,15 @@ class MapViewModel extends ChangeNotifier {
       notifyListeners();
 
       try {
-        Map<String, dynamic>? things = await RequestServ.instance.fetchByUnit(cookie: _cookie, deviceId: route.id);
-        var result = await RequestServ.instance.fetchStatusDevice(cookie: _cookie, deviceId: route.id);
-        route.lat = things!["latitude"];
-        route.lng = things["longitude"];
-        route.status = result["status"].toString().toUpperCase() == "ONLINE";
+        Map<String, dynamic>? things = await RequestServ.instance.fetchByUnit(deviceId: route.id);
+        var result = await RequestServ.instance.fetchStatusDevice(deviceId: route.id);
+        if (things != null) {
+          route.lat = (things["latitude"] as num).toDouble();
+          route.lng = (things["longitude"] as num).toDouble();
+        }
+        if (result != null) {
+          route.status = result["status"].toString().toUpperCase() == "ONLINE";
+        }
         _selectedRoutes.add(route);
         await _addOrUpdateMarker(route);
       } catch (e) {
@@ -219,7 +232,6 @@ class MapViewModel extends ChangeNotifier {
         notifyListeners();
       }
     }
-
   }
 
   BuildContext? _currentContext;
@@ -265,7 +277,7 @@ class MapViewModel extends ChangeNotifier {
     if (index != -1) {
       final unit = _selectedRoutes[index];
       final oldLatLng = LatLng(unit.lat, unit.lng);
-      final newLatLng = LatLng(pos['latitude'] as double, pos['longitude'] as double);
+      final newLatLng = LatLng((pos['latitude'] as num).toDouble(), (pos['longitude'] as num).toDouble());
 
       unit.status = pos["attributes"]['ignition'].toString().toUpperCase() == "TRUE" &&
           pos["attributes"]['motion'].toString().toUpperCase() == "TRUE";
@@ -284,7 +296,7 @@ class MapViewModel extends ChangeNotifier {
       final latTween = Tween(begin: oldLatLng.latitude, end: newLatLng.latitude);
       final lngTween = Tween(begin: oldLatLng.longitude, end: newLatLng.longitude);
 
-      _animationTimers[deviceId] = Timer.periodic(Duration(milliseconds: 1000 ~/ framesPerSecond), (timer) {
+      _animationTimers[deviceId] = Timer.periodic(const Duration(milliseconds: 33), (timer) {
         currentFrame++;
         final t = currentFrame / totalFrames;
 
@@ -328,8 +340,8 @@ class MapViewModel extends ChangeNotifier {
 
     textPainter.layout(maxWidth: iconWidth * 1.5);
 
-    String text_icon = text.toUpperCase();
-    final String imagePath = switch (text_icon) {
+    String textIcon = text.toUpperCase();
+    final String imagePath = switch (textIcon) {
       String s when s.startsWith("CMS") => isOnline
           ? 'assets/images/icons/van_Motion_True.png'
           : 'assets/images/icons/van_Motion_False.png',
@@ -367,31 +379,30 @@ class MapViewModel extends ChangeNotifier {
     );
 
     final ByteData? byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
-    final Uint8List pngBytes = byteData!.buffer.asUint8List();
-
-    return BitmapDescriptor.fromBytes(pngBytes);
+    if (byteData == null) return BitmapDescriptor.defaultMarker;
+    
+    return BitmapDescriptor.bytes(byteData.buffer.asUint8List());
   }
 
   Future<void> showReaderEvents(int deviceId, String unitName, BuildContext context) async {
     final now = DateTime.now();
-    final yesterday = now.subtract(const Duration(hours: 24));
-    final formatter = DateFormat('yyyy-MM-dd HH:mm');
-    
-    final fechaInicio = formatter.format(yesterday);
-    final fechaFin = formatter.format(now);
+    final from = DateTime(now.year, now.month, now.day, 0, 0, 0);
+    final to = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    final DateFormat formatter = DateFormat("yyyy-MM-dd HH:mm");
+    final String fromStr = formatter.format(from);
+    final String toStr = formatter.format(to);
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return ReaderEventsBottomSheet(
-          deviceId: deviceId,
-          unitName: unitName,
-          fechaInicio: fechaInicio,
-          fechaFin: fechaFin,
-        );
-      },
+      builder: (context) => ReaderEventsBottomSheet(
+        deviceId: deviceId,
+        unitName: unitName,
+        fechaInicio: fromStr,
+        fechaFin: toStr,
+      ),
     );
   }
 }
