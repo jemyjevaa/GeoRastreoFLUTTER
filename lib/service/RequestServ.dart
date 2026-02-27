@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:geo_rastreo/service/user_session_cache.dart';
 import 'package:http/http.dart' as http;
 
 class RequestServ {
@@ -10,11 +11,13 @@ class RequestServ {
   static const String _apiUser = 'apinstaladores@geovoy.com';
   static const String _apiPass = 'Instaladores*9';
 
+
   // Singleton pattern
   RequestServ._privateConstructor();
   static final RequestServ instance = RequestServ._privateConstructor();
-  final String basicAuth =
-      'Basic ${base64Encode(utf8.encode('$_apiUser:$_apiPass'))}';
+  // final String basicAuth =
+  //     'Basic ${base64Encode(utf8.encode('$_apiUser:$_apiPass'))}';
+  String basicAuth = UserSessionCache().pwdEncode!;
 
   Future<String?> handlingRequest({
     required String urlParam,
@@ -146,10 +149,7 @@ class RequestServ {
     }
   }
 
-  Future<Map<String, dynamic>?> fetchByUnit({
-    required String cookie,
-    required int deviceId,
-  }) async {
+  Future<Map<String, dynamic>?> fetchByUnit({ required int deviceId }) async {
     try {
       final url = Uri.parse("https://rastreobusmen.geovoy.com/api/positions");
 
@@ -184,7 +184,7 @@ class RequestServ {
     }
   }
 
-  Future<dynamic> fetchStatusDevice({ required String cookie, required int deviceId }) async {
+  Future<dynamic> fetchStatusDevice({ required int deviceId }) async {
     try {
       final url = Uri.parse("https://rastreobusmen.geovoy.com/api/devices/$deviceId");
 

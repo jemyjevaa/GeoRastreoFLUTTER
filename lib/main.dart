@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:geo_rastreo/service/user_session_cache.dart';
 import 'package:provider/provider.dart';
 import 'package:geo_rastreo/views/LoginView.dart';
 import 'package:geo_rastreo/views/MapsView.dart';
 import 'package:geo_rastreo/viewmodels/login_viewmodel.dart';
 import 'package:geo_rastreo/services/auth_service.dart';
 
+import 'models/user_session.dart';
 
-void main() {
+
+Future<void> main() async {
+  // Asegurar que Flutter esté inicializado antes de usar SharedPreferences
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializar la caché correctamente
+  await UserSessionCache().init();
+
   runApp(
     MultiProvider(
       providers: [

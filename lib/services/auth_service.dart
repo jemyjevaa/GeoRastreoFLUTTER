@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:geo_rastreo/service/user_session_cache.dart';
 import '../models/user_session.dart';
 
 class AuthService {
@@ -129,7 +130,7 @@ class AuthService {
           // Paso 4: Calcular BasicAuthorization
           final credentials = '$email:$password';
           final basicAuth = base64Encode(utf8.encode(credentials));
-
+          UserSessionCache().pwdEncode = basicAuth;
           // Crear el objeto completo con los campos adicionales
           final sessionCompleta = session.copyWith(
             basicAuthorization: basicAuth,
@@ -202,6 +203,7 @@ class AuthService {
   }
   
   Future<void> logout() async {
+    UserSessionCache().clear();
     await _storage.delete(key: 'auth_token');
     await _storage.delete(key: 'session_cookie');
     await _storage.delete(key: 'user_session');
