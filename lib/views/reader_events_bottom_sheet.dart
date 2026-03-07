@@ -248,9 +248,19 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: widget.route.status ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                            color: widget.route.status == null
+                                ? Colors.grey.withOpacity(0.1)
+                                : widget.route.status == true
+                                    ? Colors.green.withOpacity(0.1)
+                                    : Colors.red.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: widget.route.status ? Colors.green : Colors.red),
+                            border: Border.all(
+                              color: widget.route.status == null
+                                  ? Colors.grey
+                                  : widget.route.status == true
+                                      ? Colors.green
+                                      : Colors.red,
+                            ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
@@ -258,13 +268,25 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
                               Icon(
                                 Icons.circle,
                                 size: 10,
-                                color: widget.route.status ? Colors.green : Colors.red,
+                                color: widget.route.status == null
+                                    ? Colors.grey
+                                    : widget.route.status == true
+                                        ? Colors.green
+                                        : Colors.red,
                               ),
                               const SizedBox(width: 5),
                               Text(
-                                widget.route.status ? 'ONLINE' : 'OFFLINE',
+                                widget.route.status == null
+                                    ? 'DESCONOCIDO'
+                                    : widget.route.status == true
+                                        ? 'EN LÍNEA'
+                                        : 'FUERA DE LÍNEA',
                                 style: TextStyle(
-                                  color: widget.route.status ? Colors.green : Colors.red,
+                                  color: widget.route.status == null
+                                      ? Colors.grey
+                                      : widget.route.status == true
+                                          ? Colors.green
+                                          : Colors.red,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12,
                                 ),

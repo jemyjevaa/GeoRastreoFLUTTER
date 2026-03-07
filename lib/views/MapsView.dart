@@ -108,7 +108,69 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                             color: model.colorAzulFuerte,
                           ),
                         ),
-                        const SizedBox(height: 15),
+                        const SizedBox(height: 12),
+                        // ---- STATUS FILTER BUTTONS ----
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Row(
+                            children: [
+                              // EN LÍNEA
+                              Expanded(
+                                child: _StatusFilterButton(
+                                  label: 'EN LÍNEA',
+                                  count: model.onlineCount,
+                                  icon: Icons.circle,
+                                  activeColor: Colors.green,
+                                  isActive: model.statusFilter == true && !model.statusFilterUnknown,
+                                  onTap: () {
+                                    if (model.statusFilter == true && !model.statusFilterUnknown) {
+                                      model.clearStatusFilter();
+                                    } else {
+                                      model.filterByStatus(true);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              // FUERA DE LÍNEA
+                              Expanded(
+                                child: _StatusFilterButton(
+                                  label: 'FUERA',
+                                  count: model.offlineCount,
+                                  icon: Icons.circle,
+                                  activeColor: Colors.red,
+                                  isActive: model.statusFilter == false && !model.statusFilterUnknown,
+                                  onTap: () {
+                                    if (model.statusFilter == false && !model.statusFilterUnknown) {
+                                      model.clearStatusFilter();
+                                    } else {
+                                      model.filterByStatus(false);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              // DESCONOCIDO
+                              Expanded(
+                                child: _StatusFilterButton(
+                                  label: 'DESC.',
+                                  count: model.unknownCount,
+                                  icon: Icons.help_outline,
+                                  activeColor: Colors.grey,
+                                  isActive: model.statusFilterUnknown,
+                                  onTap: () {
+                                    if (model.statusFilterUnknown) {
+                                      model.clearStatusFilter();
+                                    } else {
+                                      model.filterByStatus(null, unknown: true);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Container(
@@ -182,6 +244,19 @@ class _MapsViewContentState extends State<_MapsViewContent> {
 
                                     return ListTile(
                                       onTap: isLoading ? null : () => model.toggleRouteSelection(route),
+                                      leading: Container(
+                                        width: 10,
+                                        height: 10,
+                                        margin: const EdgeInsets.only(top: 4),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: route.status == null
+                                              ? Colors.grey
+                                              : route.status == true
+                                                  ? Colors.green
+                                                  : Colors.red,
+                                        ),
+                                      ),
                                       title: Text(
                                         route.name,
                                         style: TextStyle(
@@ -392,6 +467,72 @@ class _MapsViewContentState extends State<_MapsViewContent> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Compact button for status filtering in the unit selection sheet
+class _StatusFilterButton extends StatelessWidget {
+  final String label;
+  final int count;
+  final IconData icon;
+  final Color activeColor;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _StatusFilterButton({
+    required this.label,
+    required this.count,
+    required this.icon,
+    required this.activeColor,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          color: isActive ? activeColor.withOpacity(0.12) : Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isActive ? activeColor : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: isActive ? activeColor : Colors.grey[400],
+              size: 14,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: isActive ? activeColor : const Color(0xFF14143A),
+              ),
+            ),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w600,
+                color: isActive ? activeColor : Colors.grey[600],
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }

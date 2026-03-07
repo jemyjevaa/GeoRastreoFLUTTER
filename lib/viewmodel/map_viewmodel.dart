@@ -30,12 +30,22 @@ class MapViewModel extends ChangeNotifier {
   bool _isLoadingRoutes = false;
   String _searchQuery = '';
   int? _selectedGroupId;
+  // null = sin filtro, true = EN LINEA, false = FUERA DE LINEA, 'unknown' via separate field
+  bool? _statusFilter;          // null=todos, true=online, false=offline
+  bool _statusFilterUnknown = false;  // true = filtrar desconocidos
   bool _isBottomSheetOpen = false;
 
   bool get isLoadingRoutes => _isLoadingRoutes;
   bool get isBottomSheetOpen => _isBottomSheetOpen;
   int? get selectedGroupId => _selectedGroupId;
   List<GroupModel> get allGroups => _allGroups;
+  bool? get statusFilter => _statusFilter;
+  bool get statusFilterUnknown => _statusFilterUnknown;
+
+  // Counts
+  int get onlineCount => _allRoutes.where((r) => r.status == true).length;
+  int get offlineCount => _allRoutes.where((r) => r.status == false).length;
+  int get unknownCount => _allRoutes.where((r) => r.status == null).length;
 
   List<RouteModel> get selectedRoutes => _selectedRoutes;
   List<RouteModel> get filteredRoutes => _filteredRoutes;
@@ -79,12 +89,37 @@ class MapViewModel extends ChangeNotifier {
     _applyFilters();
   }
 
+  void filterByStatus(bool? status, {bool unknown = false}) {
+    if (unknown) {
+      _statusFilter = null;
+      _statusFilterUnknown = true;
+    } else {
+      _statusFilter = status;
+      _statusFilterUnknown = false;
+    }
+    _applyFilters();
+  }
+
+  void clearStatusFilter() {
+    _statusFilter = null;
+    _statusFilterUnknown = false;
+    _applyFilters();
+  }
+
   void _applyFilters() {
     _filteredRoutes = _allRoutes
         .where((route) {
           final matchesSearch = route.name.toLowerCase().contains(_searchQuery.toLowerCase());
           final matchesGroup = _selectedGroupId == null || route.groupId == _selectedGroupId;
-          return matchesSearch && matchesGroup;
+          bool matchesStatus;
+          if (_statusFilterUnknown) {
+            matchesStatus = route.status == null;
+          } else if (_statusFilter == null) {
+            matchesStatus = true;
+          } else {
+            matchesStatus = route.status == _statusFilter;
+          }
+          return matchesSearch && matchesGroup && matchesStatus;
         })
         .toList();
     notifyListeners();
@@ -281,7 +316,8 @@ class MapViewModel extends ChangeNotifier {
   }
 
   Future<void> _addOrUpdateMarker(RouteModel unit, {LatLng? position}) async {
-    final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
+    final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status ?? false);
+
     _updateMarker(unit, icon, position: position);
   }
 
@@ -309,7 +345,8 @@ class MapViewModel extends ChangeNotifier {
         _animationTimers[deviceId]!.cancel();
       }
 
-      final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status);
+      final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status ?? false);
+
 
       const animationDuration = Duration(seconds: 2);
       const framesPerSecond = 30;
