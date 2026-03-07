@@ -2,7 +2,7 @@ class RouteModel {
   final int id;
   final String name;
   final int groupId;
-  bool status;
+  bool? status;   // null = DESCONOCIDO, true = EN LÍNEA, false = FUERA DE LÍNEA
   double lat;
   double lng;
 
@@ -12,7 +12,7 @@ class RouteModel {
     required this.groupId,
     this.lat = 0.0,
     this.lng = 0.0,
-    this.status = false,
+    this.status,
   });
 
   factory RouteModel.fromJson(Map<String, dynamic> json) => RouteModel(
