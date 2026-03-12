@@ -28,6 +28,7 @@ class MapViewModel extends ChangeNotifier {
   final List<RouteModel> _selectedRoutes = [];
   final List<int> _loadingRoutes = [];
   String _groupSearchQuery = '';
+  bool isSelectAll = false;
 
   GoogleMapController? _mapController;
   bool _isLoadingRoutes = false;
@@ -180,14 +181,21 @@ class MapViewModel extends ChangeNotifier {
   }
 
   void toggleSelectAll() {
-    if (_selectedRoutes.length == _allRoutes.length) {
+    if (_selectedRoutes.length == _allRoutes.length || isSelectAll) {
       _selectedRoutes.clear();
       _markers.clear();
       _animationTimers.forEach((_, timer) => timer.cancel());
       _animationTimers.clear();
+      isSelectAll = false;
     } else {
       _selectedRoutes.clear();
-      _selectedRoutes.addAll(_allRoutes);
+      isSelectAll = true;
+      if(selectedGroupId == null){
+        _selectedRoutes.addAll(_allRoutes);
+      }else{
+        _selectedRoutes.addAll(_allRoutes.where((route) => route.groupId == selectedGroupId) );
+      }
+
     }
     _updateCameraBounds();
     _applyFilters();

@@ -320,9 +320,6 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
     );
   }
 
-  Future<void> _getHistoryMiove() async {
-    _showReplayMenu();
-  }
 
   int get _totalEmployees {
     return _events

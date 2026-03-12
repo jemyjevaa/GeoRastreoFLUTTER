@@ -224,7 +224,7 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                             'TODAS',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          value: model.selectedRoutesCount == model.totalRoutesCount && model.totalRoutesCount > 0,
+                          value: model.isSelectAll,
                           activeColor: model.colorAmarillo,
                           onChanged: (bool? value) {
                             model.toggleSelectAll();
