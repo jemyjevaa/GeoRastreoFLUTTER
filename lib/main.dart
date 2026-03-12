@@ -5,6 +5,7 @@ import 'package:geo_rastreo/views/LoginView.dart';
 import 'package:geo_rastreo/views/MapsView.dart';
 import 'package:geo_rastreo/viewmodel/login_viewmodel.dart';
 import 'package:geo_rastreo/service/auth_service.dart';
+import 'package:media_kit/media_kit.dart'; // Importar media_kit
 
 import 'models/user_session.dart';
 
@@ -12,6 +13,9 @@ import 'models/user_session.dart';
 Future<void> main() async {
   // Asegurar que Flutter esté inicializado antes de usar SharedPreferences
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializar media_kit para el soporte de video FLV
+  MediaKit.ensureInitialized();
   
   // Inicializar la caché correctamente
   await UserSessionCache().init();
