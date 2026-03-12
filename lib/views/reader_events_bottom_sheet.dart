@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geo_rastreo/views/widget/camera_unit.dart';
 import 'package:intl/intl.dart';
 import '../models/operator_model.dart';
 import '../models/reader_event_model.dart';
@@ -269,6 +270,18 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
                           onPressed: () => _getHistoryMiove(),
                           icon: const Icon(Icons.play_arrow_outlined, color: Color(0xFF14143A)),
                           tooltip: 'Ver rutas',
+                        ),
+                        IconButton(
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (context) => CameraUnit(nameUnit: widget.route.name),
+                            );
+                          },
+                          icon: const Icon(Icons.video_camera_front_outlined, color: Color(0xFF14143A)),
+                          tooltip: 'Ver cámara',
                         ),
                         // const SizedBox(width: 48),
                         Expanded(

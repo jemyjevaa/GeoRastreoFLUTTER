@@ -45,7 +45,7 @@ class MapViewModel extends ChangeNotifier {
   // Counts
   int get onlineCount => _allRoutes.where((r) => r.statusText.toString().toLowerCase() == "online").length;
   int get offlineCount => _allRoutes.where((r) => r.statusText.toString().toLowerCase() == "offline").length;
-  int get unknownCount => _allRoutes.where((r) => r.statusText.toString().toLowerCase() == "unknow").length;
+  int get unknownCount => _allRoutes.where((r) => r.statusText.toString().toLowerCase() == "unknown").length;
 
   List<RouteModel> get selectedRoutes => _selectedRoutes;
   List<RouteModel> get filteredRoutes => _filteredRoutes;
