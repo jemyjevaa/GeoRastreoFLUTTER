@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import '../models/operator_model.dart';
 import '../models/reader_event_model.dart';
 import '../service/RequestServ.dart';
+import 'package:provider/provider.dart';
+import '../viewmodel/map_viewmodel.dart';
 
 import '../models/route_model.dart';
 
@@ -219,11 +221,106 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
     }
   }
 
+  Future<void> _showReplayMenu() async {
+    final viewModel = Provider.of<MapViewModel>(context, listen: false);
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text(
+                  'Seleccionar Periodo de Replay',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.today, color: Color(0xFF14143A)),
+                title: const Text('HOY'),
+                onTap: () {
+                  Navigator.pop(context); // Close menu
+                  Navigator.pop(this.context); // Close events bottom sheet
+                  final now = DateTime.now();
+                  final start = DateTime(now.year, now.month, now.day);
+                  final end = DateTime(now.year, now.month, now.day, 23, 59, 59);
+                  viewModel.startReplay(widget.route.id, start, end);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.history, color: Color(0xFF14143A)),
+                title: const Text('AYER'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.pop(this.context);
+                  final yesterday = DateTime.now().subtract(const Duration(days: 1));
+                  final start = DateTime(yesterday.year, yesterday.month, yesterday.day);
+                  final end = DateTime(yesterday.year, yesterday.month, yesterday.day, 23, 59, 59);
+                  viewModel.startReplay(widget.route.id, start, end);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.date_range, color: Color(0xFF14143A)),
+                title: const Text('ESTA SEMANA'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.pop(this.context);
+                  final now = DateTime.now();
+                  final start = now.subtract(Duration(days: now.weekday - 1));
+                  final startDay = DateTime(start.year, start.month, start.day);
+                  viewModel.startReplay(widget.route.id, startDay, now);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.event_note, color: Color(0xFF14143A)),
+                title: const Text('CUSTOM (Intervalo de fechas)'),
+                subtitle: const Text('Puede tardar algunos minutos en mostrarse'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  final DateTimeRange? picked = await showDateRangePicker(
+                    context: this.context,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime.now(),
+                    builder: (context, child) {
+                      return Theme(
+                        data: Theme.of(context).copyWith(
+                          colorScheme: const ColorScheme.light(
+                            primary: Color(0xFFF69D32),
+                            onPrimary: Colors.white,
+                            onSurface: Color(0xFF14143A),
+                          ),
+                        ),
+                        child: child!,
+                      );
+                    },
+                  );
+                  if (picked != null) {
+                    Navigator.pop(this.context);
+                    viewModel.startReplay(
+                      widget.route.id,
+                      picked.start,
+                      DateTime(picked.end.year, picked.end.month, picked.end.day, 23, 59, 59),
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _getHistoryMiove() async {
-    String urlHistory = "https://rastreobusmen.geovoy.com/api/positions?"
-        "deviceId=73&"
-        "from=2026-03-06T06%3A00%3A00.000Z&"
-        "to=2026-03-07T05%3A59%3A59.999Z";
+    _showReplayMenu();
   }
 
   int get _totalEmployees {
@@ -266,7 +363,7 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         IconButton(
-                          onPressed: () => _getHistoryMiove(),
+                          onPressed: _showReplayMenu,
                           icon: const Icon(Icons.play_arrow_outlined, color: Color(0xFF14143A)),
                           tooltip: 'Ver rutas',
                         ),

@@ -170,32 +170,32 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 15),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 20),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[100],
-                              borderRadius: BorderRadius.circular(15),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<int?>(
-                                value: model.selectedGroupId,
-                                hint: const Text('Filtrar por grupo/empresa...'),
-                                isExpanded: true,
-                                icon: Icon(Icons.business, color: model.colorAzulFuerte),
-                                items: [
-                                  const DropdownMenuItem<int?>(
-                                    value: null,
-                                    child: Text('Todos los grupos'),
+                          child: GestureDetector(
+                            onTap: () => _showCompanySearchDialog(model),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(15),
+                                border: Border.all(color: Colors.grey[300]!),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.business_center, color: model.colorAzulFuerte, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      model.selectedGroupId == null 
+                                          ? 'Todas las empresas' 
+                                          : model.getGroupName(model.selectedGroupId!),
+                                      style: TextStyle(color: model.colorAzulFuerte, fontWeight: FontWeight.w500),
+                                    ),
                                   ),
-                                  ...model.allGroups.map((group) => DropdownMenuItem<int?>(
-                                        value: group.id,
-                                        child: Text(group.name),
-                                      )),
+                                  Icon(Icons.arrow_drop_down, color: model.colorAzulFuerte),
                                 ],
-                                onChanged: model.filterByGroup,
                               ),
                             ),
                           ),
@@ -373,6 +373,7 @@ class _MapsViewContentState extends State<_MapsViewContent> {
             initialCameraPosition: _initialPosition,
             onMapCreated: viewModel.onMapCreated,
             markers: viewModel.markers,
+            polylines: viewModel.polylines,
             myLocationEnabled: true,
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
@@ -465,6 +466,199 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                 ),
               ),
             ),
+          ),
+          if (viewModel.isReplaying)
+            Positioned(
+              bottom: 20,
+              left: 20,
+              right: 20,
+              child: _ReplayConsole(viewModel: viewModel),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showCompanySearchDialog(MapViewModel model) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              title: const Text('Seleccionar Empresa'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: 'Buscar...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onChanged: (val) {
+                        model.searchGroups(val);
+                        setModalState(() {});
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: model.filteredGroups.length + 1,
+                        itemBuilder: (context, index) {
+                          if (index == 0) {
+                            return ListTile(
+                              title: const Text('Todas las empresas'),
+                              onTap: () {
+                                model.filterByGroup(null);
+                                Navigator.pop(context);
+                              },
+                              selected: model.selectedGroupId == null,
+                            );
+                          }
+                          final group = model.filteredGroups[index - 1];
+                          return ListTile(
+                            title: Text(group.name),
+                            onTap: () {
+                              model.filterByGroup(group.id);
+                              Navigator.pop(context);
+                            },
+                            selected: model.selectedGroupId == group.id,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ReplayConsole extends StatelessWidget {
+  final MapViewModel viewModel;
+
+  const _ReplayConsole({required this.viewModel});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: viewModel.colorAzulFuerte,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: Icon(
+                  viewModel.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                  color: viewModel.colorAmarillo,
+                  size: 40,
+                ),
+                onPressed: viewModel.togglePlayPause,
+              ),
+              Expanded(
+                child: Column(
+                  children: [
+                    Slider(
+                      value: viewModel.currentStepIndex.toDouble().clamp(0, (viewModel.totalSteps - 1).toDouble().clamp(0, double.infinity)),
+                      min: 0,
+                      max: (viewModel.totalSteps - 1).toDouble().clamp(0, double.infinity),
+                      activeColor: viewModel.colorAmarillo,
+                      inactiveColor: Colors.grey[700],
+                      onChanged: viewModel.seekTo,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            viewModel.currentTimestamp,
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                          Flexible(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  constraints: const BoxConstraints(),
+                                  padding: EdgeInsets.zero,
+                                  icon: Icon(
+                                    viewModel.isFollowActive ? Icons.location_searching : Icons.location_disabled,
+                                    color: viewModel.isFollowActive ? viewModel.colorAmarillo : Colors.grey,
+                                    size: 18,
+                                  ),
+                                  onPressed: viewModel.toggleFollow,
+                                  tooltip: 'Seguir unidad',
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(
+                                  child: Text(
+                                    "${viewModel.playbackSpeed.toStringAsFixed(1)}x",
+                                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.cancel, color: Colors.redAccent, size: 30),
+                onPressed: viewModel.stopReplay,
+                tooltip: 'Cerrar Replay',
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [1.0, 2.0, 5.0, 10.0].map((speed) {
+              final isSelected = viewModel.playbackSpeed == speed;
+              return GestureDetector(
+                onTap: () => viewModel.setPlaybackSpeed(speed),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected ? viewModel.colorAmarillo : Colors.transparent,
+                    borderRadius: BorderRadius.circular(15),
+                    border: Border.all(color: viewModel.colorAmarillo),
+                  ),
+                  child: Text(
+                    "${speed.toInt()}x",
+                    style: TextStyle(
+                      color: isSelected ? viewModel.colorAzulFuerte : viewModel.colorAmarillo,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),

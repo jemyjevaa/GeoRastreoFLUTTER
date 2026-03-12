@@ -240,6 +240,40 @@ class RequestServ {
     }
   }
 
+  Future<List<Map<String, dynamic>>?> fetchHistory({
+    required int deviceId,
+    required String from,
+    required String to,
+  }) async {
+    try {
+      final url = Uri.parse("https://rastreobusmen.geovoy.com/api/positions");
+      final params = {
+        'deviceId': deviceId.toString(),
+        'from': from,
+        'to': to,
+      };
+      
+      final uri = url.replace(queryParameters: params);
+      
+      final response = await http.get(
+        uri,
+        headers: {"Authorization": basicAuth},
+      ).timeout(const Duration(seconds: 30));
+
+      if (response.statusCode != 200) {
+        print("HTTP error fetchHistory: ${response.statusCode}");
+        return null;
+      }
+
+      final List<dynamic> jsonList = jsonDecode(response.body);
+      return jsonList.cast<Map<String, dynamic>>();
+
+    } catch (e) {
+      print("Error fetchHistory: $e");
+      return null;
+    }
+  }
+
 }
 
 class UserSession {
