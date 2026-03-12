@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:geo_rastreo/service/user_session_cache.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -25,6 +27,7 @@ class MapViewModel extends ChangeNotifier {
   List<RouteModel> _filteredRoutes = [];
   final List<RouteModel> _selectedRoutes = [];
   final List<int> _loadingRoutes = [];
+  String _groupSearchQuery = '';
 
   GoogleMapController? _mapController;
   bool _isLoadingRoutes = false;
@@ -34,13 +37,40 @@ class MapViewModel extends ChangeNotifier {
   bool? _statusFilter;          // null=todos, true=online, false=offline
   bool _statusFilterUnknown = false;  // true = filtrar desconocidos
   bool _isBottomSheetOpen = false;
+  final Set<Polyline> _polylines = {};
+  bool _isReplaying = false;
+  List<Map<String, dynamic>> _historyData = [];
+  int _currentStepIndex = 0;
+  bool _isPlaying = false;
+  int? _replayedDeviceId;
+  double _playbackSpeed = 1.0;
+  Timer? _playbackTimer;
+  Set<Marker> _arrowMarkers = {};
+  bool _isFollowActive = true;
+  BitmapDescriptor? _arrowIcon;
 
   bool get isLoadingRoutes => _isLoadingRoutes;
   bool get isBottomSheetOpen => _isBottomSheetOpen;
+  Set<Polyline> get polylines => _polylines;
+  bool get isReplaying => _isReplaying;
+  bool get isPlaying => _isPlaying;
+  bool get isFollowActive => _isFollowActive;
+  int get currentStepIndex => _currentStepIndex;
+  int get totalSteps => _historyData.length;
+  double get playbackSpeed => _playbackSpeed;
+  String get currentTimestamp {
+    if (_historyData.isEmpty || _currentStepIndex >= _historyData.length) return "";
+    final date = DateTime.parse(_historyData[_currentStepIndex]['deviceTime'] ?? DateTime.now().toIso8601String());
+    return DateFormat("HH:mm:ss").format(date.toLocal());
+  }
   int? get selectedGroupId => _selectedGroupId;
   List<GroupModel> get allGroups => _allGroups;
   bool? get statusFilter => _statusFilter;
   bool get statusFilterUnknown => _statusFilterUnknown;
+  List<GroupModel> get filteredGroups {
+    if (_groupSearchQuery.isEmpty) return _allGroups;
+    return _allGroups.where((g) => g.name.toLowerCase().contains(_groupSearchQuery.toLowerCase())).toList();
+  }
 
   // Counts
   int get onlineCount => _allRoutes.where((r) => r.statusText.toString().toLowerCase() == "online").length;
@@ -55,7 +85,6 @@ class MapViewModel extends ChangeNotifier {
   GoogleMapController? get mapController => _mapController;
 
   final Set<Marker> _markers = {};
-  Set<Marker> get markers => _markers;
 
   final Map<int, Timer> _animationTimers = {};
 
@@ -104,6 +133,11 @@ class MapViewModel extends ChangeNotifier {
     _statusFilter = null;
     _statusFilterUnknown = false;
     _applyFilters();
+  }
+
+  void searchGroups(String query) {
+    _groupSearchQuery = query;
+    notifyListeners();
   }
 
   void _applyFilters() {
@@ -470,12 +504,283 @@ class MapViewModel extends ChangeNotifier {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => ReaderEventsBottomSheet(
-        route: route,
-        groupName: getGroupName(route.groupId),
-        fechaInicio: fromStr,
-        fechaFin: toStr,
+      builder: (context) => ChangeNotifierProvider.value(
+        value: this,
+        child: ReaderEventsBottomSheet(
+          route: route,
+          groupName: getGroupName(route.groupId),
+          fechaInicio: fromStr,
+          fechaFin: toStr,
+        ),
       ),
     );
+  }
+
+  Future<void> startReplay(int deviceId, DateTime from, DateTime to) async {
+    _isReplaying = true;
+    _replayedDeviceId = deviceId;
+    _polylines.clear();
+    notifyListeners();
+
+    final DateFormat formatter = DateFormat("yyyy-MM-ddTHH:mm:ss.SSS'Z'");
+    final String fromStr = formatter.format(from.toUtc());
+    final String toStr = formatter.format(to.toUtc());
+
+    try {
+      final history = await RequestServ.instance.fetchHistory(
+        deviceId: deviceId,
+        from: fromStr,
+        to: toStr,
+      );
+
+      if (history == null || history.isEmpty) {
+        _isReplaying = false;
+        notifyListeners();
+        Fluttertoast.showToast(msg: "No se encontró historial para este periodo");
+        return;
+      }
+
+      final List<LatLng> points = history
+          .map((pos) => LatLng(
+                (pos['latitude'] as num).toDouble(),
+                (pos['longitude'] as num).toDouble(),
+              ))
+          .toList();
+
+      _polylines.add(Polyline(
+        polylineId: PolylineId(deviceId.toString()),
+        points: points,
+        color: colorAmarillo,
+        width: 4,
+      ));
+
+      // Fit camera to bounds
+      if (_mapController != null) {
+        double minLat = points.first.latitude;
+        double maxLat = points.first.latitude;
+        double minLng = points.first.longitude;
+        double maxLng = points.first.longitude;
+
+        for (var p in points) {
+          if (p.latitude < minLat) minLat = p.latitude;
+          if (p.latitude > maxLat) maxLat = p.latitude;
+          if (p.longitude < minLng) minLng = p.longitude;
+          if (p.longitude > maxLng) maxLng = p.longitude;
+        }
+
+        final bounds = LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        );
+
+        _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+      }
+
+      _historyData = history;
+      _currentStepIndex = 0;
+      _isPlaying = true;
+      _generateArrows(points);
+      _startPlaybackTimer();
+      _updateReplayMarker();
+      
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error starting replay: $e");
+      _isReplaying = false;
+      notifyListeners();
+    }
+  }
+
+  void _startPlaybackTimer() {
+    _playbackTimer?.cancel();
+    final interval = (1000 / _playbackSpeed).toInt();
+    _playbackTimer = Timer.periodic(Duration(milliseconds: interval), (timer) {
+      if (_currentStepIndex < _historyData.length - 1) {
+        _currentStepIndex++;
+        _updateReplayMarker();
+        notifyListeners();
+      } else {
+        _isPlaying = false;
+        timer.cancel();
+        notifyListeners();
+      }
+    });
+  }
+
+  void togglePlayPause() {
+    _isPlaying = !_isPlaying;
+    if (_isPlaying) {
+      if (_currentStepIndex >= _historyData.length - 1) {
+        _currentStepIndex = 0;
+      }
+      _startPlaybackTimer();
+    } else {
+      _playbackTimer?.cancel();
+    }
+    notifyListeners();
+  }
+
+  void seekTo(double value) {
+    _currentStepIndex = value.toInt();
+    _updateReplayMarker();
+    notifyListeners();
+  }
+
+  void setPlaybackSpeed(double speed) {
+    _playbackSpeed = speed;
+    if (_isPlaying) {
+      _startPlaybackTimer();
+    }
+    notifyListeners();
+  }
+
+  void toggleFollow() {
+    _isFollowActive = !_isFollowActive;
+    if (_isFollowActive && _historyData.isNotEmpty) {
+      _centerCameraOnCurrentStep();
+    }
+    notifyListeners();
+  }
+
+  void _centerCameraOnCurrentStep() {
+    if (_mapController == null || _historyData.isEmpty || _currentStepIndex >= _historyData.length) return;
+    final pos = _historyData[_currentStepIndex];
+    final lat = (pos['latitude'] as num).toDouble();
+    final lng = (pos['longitude'] as num).toDouble();
+    _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(lat, lng)));
+  }
+
+  void _updateReplayMarker() async {
+    if (_historyData.isEmpty || _currentStepIndex >= _historyData.length) return;
+    
+    final pos = _historyData[_currentStepIndex];
+    final lat = (pos['latitude'] as num).toDouble();
+    final lng = (pos['longitude'] as num).toDouble();
+    final deviceId = pos['deviceId'];
+    
+    // We reuse the existing marker logic but for the specific historical point
+    final route = _selectedRoutes.firstWhere((r) => r.id == deviceId, orElse: () => _selectedRoutes.first);
+    
+    final BitmapDescriptor icon = await _createCustomMarker(route.name, true);
+    
+    final marker = Marker(
+      markerId: MarkerId("replay_marker"),
+      position: LatLng(lat, lng),
+      icon: icon,
+      anchor: const Offset(0.5, 1.0),
+      zIndex: 2,
+    );
+    
+    _markers.removeWhere((m) => m.markerId.value == "replay_marker");
+    _markers.add(marker);
+
+    if (_isFollowActive) {
+      _centerCameraOnCurrentStep();
+    }
+  }
+
+  Future<BitmapDescriptor> _createArrowIcon() async {
+    if (_arrowIcon != null) return _arrowIcon!;
+
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    const double size = 40.0;
+    final Paint paint = Paint()
+      ..color = colorAmarillo
+      ..style = PaintingStyle.fill;
+
+    final Path path = Path();
+    path.moveTo(size / 2, 0); // Tip
+    path.lineTo(size, size); // Bottom right
+    path.lineTo(size / 2, size * 0.7); // Bottom middle (indent)
+    path.lineTo(0, size); // Bottom left
+    path.close();
+
+    canvas.drawPath(path, paint);
+
+    final ui.Image image = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
+    final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    _arrowIcon = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+    return _arrowIcon!;
+  }
+
+  void _generateArrows(List<LatLng> points) async {
+    _arrowMarkers.clear();
+    if (points.length < 2) return;
+
+    final BitmapDescriptor arrowIcon = await _createArrowIcon();
+
+    // Add arrow every N points to avoid clutter
+    const int gap = 15;
+    for (int i = 0; i < points.length - 1; i += gap) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final bearing = _calculateBearing(p1, p2);
+      
+      final pos = _historyData[i];
+      final dateRaw = pos['deviceTime'] ?? pos['serverTime'];
+      String dateStr = "";
+      String timeStr = "";
+      if (dateRaw != null) {
+        final date = DateTime.parse(dateRaw).toLocal();
+        dateStr = DateFormat("dd/MM/yyyy").format(date);
+        timeStr = DateFormat("HH:mm:ss").format(date);
+      }
+      final double speedVal = (pos['speed'] as num? ?? 0.0).toDouble() * 1.852; // knots to km/h
+
+      final marker = Marker(
+        markerId: MarkerId("arrow_$i"),
+        position: p1,
+        icon: arrowIcon,
+        rotation: bearing,
+        anchor: const Offset(0.5, 0.5),
+        flat: true,
+        infoWindow: InfoWindow(
+          title: "Velocidad: ${speedVal.toStringAsFixed(1)} km/h",
+          snippet: "Fecha: $dateStr  Hora: $timeStr",
+        ),
+      );
+      _arrowMarkers.add(marker);
+    }
+  }
+
+  double _calculateBearing(LatLng start, LatLng end) {
+    final double lat1 = start.latitude * (3.141592653589793 / 180.0);
+    final double lon1 = start.longitude * (3.141592653589793 / 180.0);
+    final double lat2 = end.latitude * (3.141592653589793 / 180.0);
+    final double lon2 = end.longitude * (3.141592653589793 / 180.0);
+
+    final double dLon = lon2 - lon1;
+    final double y = math.sin(dLon) * math.cos(lat2);
+    final double x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+    final double radians = math.atan2(y, x);
+    return (radians * (180.0 / 3.141592653589793) + 360.0) % 360.0;
+  }
+
+  @override
+  Set<Marker> get markers => {..._markers, ..._arrowMarkers};
+
+  void stopReplay() {
+    final int? formerId = _replayedDeviceId;
+    _isReplaying = false;
+    _isPlaying = false;
+    _playbackTimer?.cancel();
+    _historyData = [];
+    _polylines.clear();
+    _arrowMarkers.clear();
+    _markers.removeWhere((m) => m.markerId.value == "replay_marker");
+    _replayedDeviceId = null;
+    
+    // Center camera on the unit if it exists in our real-time list
+    if (formerId != null && _mapController != null) {
+      try {
+        final route = _allRoutes.firstWhere((r) => r.id == formerId);
+        _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(route.lat, route.lng)));
+      } catch (_) {
+        // Route not found in current list
+      }
+    }
+    
+    notifyListeners();
   }
 }
