@@ -22,6 +22,12 @@ class MapViewModel extends ChangeNotifier {
   final Color colorAmarillo = const Color(0xFFF69D32);
   final Color colorAzulFuerte = const Color(0xFF14143A);
   
+  // Constantes de ubicación
+  static const LatLng _mexicoCenter = LatLng(23.6345, -102.5528);
+  
+  // Caché de imágenes para optimizar rendimiento de marcadores
+  final Map<String, ui.Image> _baseImageCache = {};
+
   List<RouteModel> _allRoutes = [];
   List<GroupModel> _allGroups = [];
   List<RouteModel> _filteredRoutes = [];
@@ -34,7 +40,6 @@ class MapViewModel extends ChangeNotifier {
   bool _isLoadingRoutes = false;
   String _searchQuery = '';
   int? _selectedGroupId;
-  // null = sin filtro, true = EN LINEA, false = FUERA DE LINEA, 'unknown' via separate field
   bool? _statusFilter;          // null=todos, true=online, false=offline
   bool _statusFilterUnknown = false;  // true = filtrar desconocidos
   bool _isBottomSheetOpen = false;
@@ -165,11 +170,47 @@ class MapViewModel extends ChangeNotifier {
       if (aSelected != bSelected) {
         return aSelected ? -1 : 1;
       }
-      return 0; // Mantener el orden original para el resto
+      return 0;
     });
 
     _filteredRoutes = filtered;
+    
+    // Sincronizamos marcadores con el filtro actual
+    _updateMarkersFromFiltered();
+    
     notifyListeners();
+  }
+
+  // Sincroniza marcadores con la lista filtrada y seleccionada
+  void _updateMarkersFromFiltered() async {
+    if (_selectedRoutes.isEmpty) {
+      _markers.clear();
+      notifyListeners();
+      return;
+    }
+
+    final filteredSelected = _filteredRoutes.where((r) => _selectedRoutes.contains(r)).toList();
+    final filteredSelectedIds = filteredSelected.map((r) => r.id.toString()).toSet();
+
+    // Eliminar marcadores que no están en el filtro actual
+    _markers.removeWhere((m) => 
+      m.markerId.value != "replay_marker" && 
+      !filteredSelectedIds.contains(m.markerId.value)
+    );
+
+    // Añadir marcadores faltantes en paralelo para mayor velocidad
+    List<Future<void>> markerFutures = [];
+    for (var route in filteredSelected) {
+      bool alreadyExists = _markers.any((m) => m.markerId.value == route.id.toString());
+      if (!alreadyExists && route.lat != 0 && route.lng != 0) {
+        markerFutures.add(_addOrUpdateMarker(route));
+      }
+    }
+    
+    if (markerFutures.isNotEmpty) {
+      await Future.wait(markerFutures);
+      notifyListeners();
+    }
   }
 
   String getGroupName(int groupId) {
@@ -180,24 +221,59 @@ class MapViewModel extends ChangeNotifier {
     }
   }
 
-  void toggleSelectAll() {
+  // Metodología unificada para obtener datos reales de la unidad
+  Future<void> _fetchUnitDetails(RouteModel route) async {
+    try {
+      final results = await Future.wait([
+        RequestServ.instance.fetchByUnit(deviceId: route.id),
+        RequestServ.instance.fetchStatusDevice(deviceId: route.id),
+      ]);
+
+      if (results[0] != null) {
+        route.lat = (results[0]!["latitude"] as num).toDouble();
+        route.lng = (results[0]!["longitude"] as num).toDouble();
+      }
+      if (results[1] != null) {
+        route.status = results[1]!["status"].toString().toUpperCase() == "ONLINE";
+      }
+    } catch (e) {
+      debugPrint("Error al obtener detalles para ${route.name}: $e");
+    }
+  }
+
+  Future<void> toggleSelectAll() async {
     if (_selectedRoutes.length == _allRoutes.length || isSelectAll) {
       _selectedRoutes.clear();
       _markers.clear();
       _animationTimers.forEach((_, timer) => timer.cancel());
       _animationTimers.clear();
       isSelectAll = false;
+      notifyListeners();
     } else {
-      _selectedRoutes.clear();
+      _isLoadingRoutes = true;
+      notifyListeners();
+      
       isSelectAll = true;
-      if(selectedGroupId == null){
-        _selectedRoutes.addAll(_allRoutes);
-      }else{
-        _selectedRoutes.addAll(_allRoutes.where((route) => route.groupId == selectedGroupId) );
+      
+      // Determinar qué rutas procesar
+      List<RouteModel> targetRoutes = _selectedGroupId == null 
+          ? List.from(_allRoutes) 
+          : _allRoutes.where((r) => r.groupId == _selectedGroupId).toList();
+
+      // Metodología adaptada: Recorrer obteniendo posiciones reales en paralelo
+      await Future.wait(targetRoutes.map((route) => _fetchUnitDetails(route)));
+
+      _selectedRoutes.clear();
+      // Solo añadir las que tengan posición válida (evitar 0,0)
+      for (var route in targetRoutes) {
+        if (route.lat != 0 && route.lng != 0) {
+          _selectedRoutes.add(route);
+        }
       }
 
+      _isLoadingRoutes = false;
+      _updateCameraBounds(force: true);
     }
-    _updateCameraBounds();
     _applyFilters();
   }
 
@@ -209,25 +285,35 @@ class MapViewModel extends ChangeNotifier {
     socket.connect();
   }
 
-  void _updateCameraBounds() {
+  void _updateCameraBounds({bool force = false}) {
     if (_mapController == null || _selectedRoutes.isEmpty) return;
 
-    if (_allRoutes.isNotEmpty && _selectedRoutes.length == _allRoutes.length) {
+    final validRoutes = _selectedRoutes.where((r) => r.lat != 0 && r.lng != 0).toList();
+
+    if (validRoutes.isEmpty) {
+      if (force) {
+        _mapController!.animateCamera(CameraUpdate.newLatLngZoom(_mexicoCenter, 5.0));
+      }
+      return;
+    }
+
+    // Permitir movimiento libre si hay más de una unidad, a menos que se fuerce (ej. al seleccionar todo)
+    if (!force && validRoutes.length > 1) {
       return;
     }
 
     double positionCam = Platform.isAndroid ? 15.9 : 15.0;
 
-    if (_selectedRoutes.length == 1) {
-      final unit = _selectedRoutes.first;
+    if (validRoutes.length == 1) {
+      final unit = validRoutes.first;
       _mapController!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(unit.lat, unit.lng), positionCam));
-    } else {
-      double minLat = _selectedRoutes.first.lat;
-      double maxLat = _selectedRoutes.first.lat;
-      double minLng = _selectedRoutes.first.lng;
-      double maxLng = _selectedRoutes.first.lng;
+    } else if (force) {
+      double minLat = validRoutes.first.lat;
+      double maxLat = validRoutes.first.lat;
+      double minLng = validRoutes.first.lng;
+      double maxLng = validRoutes.first.lng;
 
-      for (var unit in _selectedRoutes) {
+      for (var unit in validRoutes) {
         if (unit.lat < minLat) minLat = unit.lat;
         if (unit.lat > maxLat) maxLat = unit.lat;
         if (unit.lng < minLng) minLng = unit.lng;
@@ -239,7 +325,7 @@ class MapViewModel extends ChangeNotifier {
         northeast: LatLng(maxLat, maxLng),
       );
 
-      _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, positionCam));
+      _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
     }
   }
 
@@ -258,42 +344,25 @@ class MapViewModel extends ChangeNotifier {
         return;
       }
 
-      // region Groups _allGroups
-      final responseGroups = await http.get(
-        Uri.parse('https://rastreobusmen.geovoy.com/api/groups'),
-        headers: {'Authorization': basicAuth},
-      ).timeout(const Duration(seconds: 15));
+      final responses = await Future.wait([
+        http.get(Uri.parse('https://rastreobusmen.geovoy.com/api/groups'), headers: {'Authorization': basicAuth}),
+        http.get(Uri.parse('https://rastreobusmen.geovoy.com/api/devices'), headers: {'Authorization': basicAuth}),
+      ]);
 
-      if (responseGroups.statusCode == 200) {
-        final List<dynamic> data = json.decode(responseGroups.body);
+      if (responses[0].statusCode == 200) {
+        final List<dynamic> data = json.decode(responses[0].body);
         _allGroups = data.map((json) => GroupModel.fromJson(json)).toList();
         initSocket();
-      } else {
-        debugPrint('Error fetching groups: ${responseGroups.statusCode}');
       }
-      // endregion Groups
 
-      // region Device
-      final responseDevice = await http.get(
-        Uri.parse('https://rastreobusmen.geovoy.com/api/devices'),
-        headers: {'Authorization': basicAuth},
-      ).timeout(const Duration(seconds: 15));
-
-      if (responseDevice.statusCode == 200) {
-        final List<dynamic> data = json.decode(responseDevice.body);
-        print("data => $data");
+      if (responses[1].statusCode == 200) {
+        final List<dynamic> data = json.decode(responses[1].body);
         _allRoutes = data.map((json) => RouteModel.fromJson(json)).toList();
         _filteredRoutes = List.from(_allRoutes);
-      } else {
-        debugPrint('Error fetching devices: ${responseDevice.statusCode}');
       }
-      // endregion Device
-
     } catch (e) {
       debugPrint('Error fetching routes: $e');
     } finally {
-      print("_allGroups => $_allGroups");
-      print("_allRoutes => $_allRoutes");
       _isLoadingRoutes = false;
       notifyListeners();
     }
@@ -305,58 +374,53 @@ class MapViewModel extends ChangeNotifier {
       _markers.removeWhere((m) => m.markerId.value == route.id.toString());
       _animationTimers[route.id]?.cancel();
       _animationTimers.remove(route.id);
-      _updateCameraBounds();
+      
+      if (_selectedRoutes.length == 1) {
+        _updateCameraBounds(force: true);
+      }
 
-      Fluttertoast.showToast(
-        msg: "Unidad removida del mapa",
-        toastLength: Toast.LENGTH_SHORT,
-        gravity: ToastGravity.BOTTOM,
-      );
-
+      Fluttertoast.showToast(msg: "Unidad removida del mapa", toastLength: Toast.LENGTH_SHORT);
       _applyFilters();
     } else {
       _loadingRoutes.add(route.id);
       notifyListeners();
 
       try {
-        Map<String, dynamic>? things = await RequestServ.instance.fetchByUnit(deviceId: route.id);
-        var result = await RequestServ.instance.fetchStatusDevice(deviceId: route.id);
-        if (things != null) {
-          route.lat = (things["latitude"] as num).toDouble();
-          route.lng = (things["longitude"] as num).toDouble();
+        // Metodología unificada: Obtener posición real
+        await _fetchUnitDetails(route);
+
+        if (route.lat != 0 && route.lng != 0) {
+          _selectedRoutes.add(route);
+          await _addOrUpdateMarker(route);
+        } else {
+          Fluttertoast.showToast(msg: "Unidad sin coordenadas válidas");
         }
-        if (result != null) {
-          route.status = result["status"].toString().toUpperCase() == "ONLINE";
-        }
-        _selectedRoutes.add(route);
-        await _addOrUpdateMarker(route);
       } catch (e) {
         debugPrint('Failed to fetch route details: $e');
       } finally {
         _loadingRoutes.remove(route.id);
-        _updateCameraBounds();
-
-        Fluttertoast.showToast(
-          msg: "Unidad mostrada en el mapa",
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-
+        if (_selectedRoutes.length == 1) {
+           _updateCameraBounds(force: true);
+        }
         _applyFilters();
       }
     }
   }
 
   BuildContext? _currentContext;
-
   void updateContext(BuildContext context) {
     _currentContext = context;
   }
 
   void _updateMarker(RouteModel unit, BitmapDescriptor icon, {LatLng? position}) {
+    final pos = position ?? LatLng(unit.lat, unit.lng);
+    
+    // NUNCA mostrar si la posición es 0,0
+    if (pos.latitude == 0 && pos.longitude == 0) return;
+
     final marker = Marker(
       markerId: MarkerId(unit.id.toString()),
-      position: position ?? LatLng(unit.lat, unit.lng),
+      position: pos,
       infoWindow: InfoWindow(title: unit.name),
       icon: icon,
       anchor: const Offset(0.5, 1.0),
@@ -371,14 +435,13 @@ class MapViewModel extends ChangeNotifier {
   }
 
   Future<void> _addOrUpdateMarker(RouteModel unit, {LatLng? position}) async {
+    if (unit.lat == 0 && unit.lng == 0 && position == null) return;
     final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status ?? false);
-
     _updateMarker(unit, icon, position: position);
   }
 
   Future<void> _updateUnitPosition(Map<String, dynamic> data) async {
-    if (selectedRoutesCount == 0) return;
-    if (!data.containsKey('positions')) return;
+    if (selectedRoutesCount == 0 || !data.containsKey('positions')) return;
 
     final positions = data['positions'];
     if (positions is! List || positions.isEmpty) return;
@@ -390,9 +453,12 @@ class MapViewModel extends ChangeNotifier {
 
     if (index != -1) {
       final unit = _selectedRoutes[index];
-      final oldLatLng = LatLng(unit.lat, unit.lng);
       final newLatLng = LatLng((pos['latitude'] as num).toDouble(), (pos['longitude'] as num).toDouble());
+      
+      // Evitar saltos a 0,0 desde el socket
+      if (newLatLng.latitude == 0 && newLatLng.longitude == 0) return;
 
+      final oldLatLng = LatLng(unit.lat, unit.lng);
       unit.status = pos["attributes"]['ignition'].toString().toUpperCase() == "TRUE" &&
           pos["attributes"]['motion'].toString().toUpperCase() == "TRUE";
 
@@ -401,7 +467,6 @@ class MapViewModel extends ChangeNotifier {
       }
 
       final BitmapDescriptor icon = await _createCustomMarker(unit.name, unit.status ?? false);
-
 
       const animationDuration = Duration(seconds: 2);
       const framesPerSecond = 30;
@@ -414,11 +479,7 @@ class MapViewModel extends ChangeNotifier {
       _animationTimers[deviceId] = Timer.periodic(const Duration(milliseconds: 33), (timer) {
         currentFrame++;
         final t = currentFrame / totalFrames;
-
-        final animatedLatLng = LatLng(
-          latTween.transform(t),
-          lngTween.transform(t),
-        );
+        final animatedLatLng = LatLng(latTween.transform(t), lngTween.transform(t));
 
         _updateMarker(unit, icon, position: animatedLatLng);
         notifyListeners();
@@ -429,7 +490,7 @@ class MapViewModel extends ChangeNotifier {
           unit.lat = newLatLng.latitude;
           unit.lng = newLatLng.longitude;
           _updateMarker(unit, icon, position: newLatLng);
-          _updateCameraBounds();
+          _updateCameraBounds(force: false);
           notifyListeners();
         }
       });
@@ -443,70 +504,55 @@ class MapViewModel extends ChangeNotifier {
     final TextPainter textPainter = TextPainter(
       textAlign: TextAlign.center,
       textDirection: ui.TextDirection.ltr,
-    );
-
-    textPainter.text = TextSpan(
-      text: text,
-      style: TextStyle(
-        fontSize: Platform.isAndroid ? 12 : 18,
-        color: Colors.black,
+      text: TextSpan(
+        text: text,
+        style: TextStyle(fontSize: Platform.isAndroid ? 12 : 18, color: Colors.black),
       ),
     );
-
     textPainter.layout(maxWidth: iconWidth * 1.5);
 
     String textIcon = text.toUpperCase();
     final String imagePath = switch (textIcon) {
-      String s when s.startsWith("CMS") => isOnline
-          ? 'assets/images/icons/van_Motion_True.png'
-          : 'assets/images/icons/van_Motion_False.png',
-      String s when s.startsWith("B") => isOnline
-          ? 'assets/images/icons/bus_Motion_True.png'
-          : 'assets/images/icons/bus_Motion_False.png',
-      _ => isOnline
-          ? 'assets/images/icons/car_Motion_True.png'
-          : 'assets/images/icons/car_Motion_False.png',
+      String s when s.startsWith("CMS") => isOnline ? 'assets/images/icons/van_Motion_True.png' : 'assets/images/icons/van_Motion_False.png',
+      String s when s.startsWith("B") => isOnline ? 'assets/images/icons/bus_Motion_True.png' : 'assets/images/icons/bus_Motion_False.png',
+      _ => isOnline ? 'assets/images/icons/car_Motion_True.png' : 'assets/images/icons/car_Motion_False.png',
     };
 
-    final ByteData data = await rootBundle.load(imagePath);
-    final ui.Codec codec = await ui.instantiateImageCodec(
-      data.buffer.asUint8List(),
-      targetWidth: iconWidth.toInt(),
-    );
-    final ui.FrameInfo fi = await codec.getNextFrame();
-    final ui.Image image = fi.image;
+    // OPTIMIZACIÓN: Caché de la imagen base para evitar decodificación repetitiva
+    ui.Image baseImage;
+    if (_baseImageCache.containsKey(imagePath)) {
+      baseImage = _baseImageCache[imagePath]!;
+    } else {
+      final ByteData data = await rootBundle.load(imagePath);
+      final ui.Codec codec = await ui.instantiateImageCodec(
+        data.buffer.asUint8List(),
+        targetWidth: iconWidth.toInt(),
+      );
+      final ui.FrameInfo fi = await codec.getNextFrame();
+      baseImage = fi.image;
+      _baseImageCache[imagePath] = baseImage;
+    }
 
-    final double canvasWidth = (textPainter.width > image.width) ? textPainter.width : image.width.toDouble();
-    final double canvasHeight = textPainter.height + image.height + padding;
+    final double canvasWidth = (textPainter.width > baseImage.width) ? textPainter.width : baseImage.width.toDouble();
+    final double canvasHeight = textPainter.height + baseImage.height + padding;
 
     final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
     final Canvas canvas = Canvas(pictureRecorder, Rect.fromLTWH(0, 0, canvasWidth, canvasHeight));
 
-    final textOffset = Offset((canvasWidth - textPainter.width) / 2, 0);
-    textPainter.paint(canvas, textOffset);
+    textPainter.paint(canvas, Offset((canvasWidth - textPainter.width) / 2, 0));
+    canvas.drawImage(baseImage, Offset((canvasWidth - baseImage.width) / 2, textPainter.height + padding), Paint());
 
-    final imageOffset = Offset((canvasWidth - image.width) / 2, textPainter.height + padding);
-    canvas.drawImage(image, imageOffset, Paint());
-
-    final ui.Image finalImage = await pictureRecorder.endRecording().toImage(
-      canvasWidth.toInt(),
-      canvasHeight.toInt(),
-    );
-
+    final ui.Image finalImage = await pictureRecorder.endRecording().toImage(canvasWidth.toInt(), canvasHeight.toInt());
     final ByteData? byteData = await finalImage.toByteData(format: ui.ImageByteFormat.png);
-    if (byteData == null) return BitmapDescriptor.defaultMarker;
     
-    return BitmapDescriptor.bytes(byteData.buffer.asUint8List());
+    return byteData != null ? BitmapDescriptor.bytes(byteData.buffer.asUint8List()) : BitmapDescriptor.defaultMarker;
   }
 
   Future<void> showReaderEvents(RouteModel route, BuildContext context) async {
     final now = DateTime.now();
     final from = DateTime(now.year, now.month, now.day, 0, 0, 0);
     final to = DateTime(now.year, now.month, now.day, 23, 59, 59);
-
-    final DateFormat formatter = DateFormat("yyyy-MM-dd HH:mm");
-    final String fromStr = formatter.format(from);
-    final String toStr = formatter.format(to);
+    final formatter = DateFormat("yyyy-MM-dd HH:mm");
 
     showModalBottomSheet(
       context: context,
@@ -517,8 +563,8 @@ class MapViewModel extends ChangeNotifier {
         child: ReaderEventsBottomSheet(
           route: route,
           groupName: getGroupName(route.groupId),
-          fechaInicio: fromStr,
-          fechaFin: toStr,
+          fechaInicio: formatter.format(from),
+          fechaFin: formatter.format(to),
         ),
       ),
     );
@@ -530,58 +576,30 @@ class MapViewModel extends ChangeNotifier {
     _polylines.clear();
     notifyListeners();
 
-    final DateFormat formatter = DateFormat("yyyy-MM-ddTHH:mm:ss.SSS'Z'");
-    final String fromStr = formatter.format(from.toUtc());
-    final String toStr = formatter.format(to.toUtc());
-
+    final formatter = DateFormat("yyyy-MM-ddTHH:mm:ss.SSS'Z'");
     try {
       final history = await RequestServ.instance.fetchHistory(
         deviceId: deviceId,
-        from: fromStr,
-        to: toStr,
+        from: formatter.format(from.toUtc()),
+        to: formatter.format(to.toUtc()),
       );
 
       if (history == null || history.isEmpty) {
         _isReplaying = false;
         notifyListeners();
-        Fluttertoast.showToast(msg: "No se encontró historial para este periodo");
+        Fluttertoast.showToast(msg: "No se encontró historial");
         return;
       }
 
-      final List<LatLng> points = history
-          .map((pos) => LatLng(
-                (pos['latitude'] as num).toDouble(),
-                (pos['longitude'] as num).toDouble(),
-              ))
-          .toList();
+      final points = history.map((pos) => LatLng((pos['latitude'] as num).toDouble(), (pos['longitude'] as num).toDouble())).toList();
+      _polylines.add(Polyline(polylineId: PolylineId(deviceId.toString()), points: points, color: colorAmarillo, width: 4));
 
-      _polylines.add(Polyline(
-        polylineId: PolylineId(deviceId.toString()),
-        points: points,
-        color: colorAmarillo,
-        width: 4,
-      ));
-
-      // Fit camera to bounds
       if (_mapController != null) {
-        double minLat = points.first.latitude;
-        double maxLat = points.first.latitude;
-        double minLng = points.first.longitude;
-        double maxLng = points.first.longitude;
-
-        for (var p in points) {
-          if (p.latitude < minLat) minLat = p.latitude;
-          if (p.latitude > maxLat) maxLat = p.latitude;
-          if (p.longitude < minLng) minLng = p.longitude;
-          if (p.longitude > maxLng) maxLng = p.longitude;
-        }
-
-        final bounds = LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        );
-
-        _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50));
+        double minLat = points.map((p) => p.latitude).reduce(math.min);
+        double maxLat = points.map((p) => p.latitude).reduce(math.max);
+        double minLng = points.map((p) => p.longitude).reduce(math.min);
+        double maxLng = points.map((p) => p.longitude).reduce(math.max);
+        _mapController!.animateCamera(CameraUpdate.newLatLngBounds(LatLngBounds(southwest: LatLng(minLat, minLng), northeast: LatLng(maxLat, maxLng)), 50));
       }
 
       _historyData = history;
@@ -590,19 +608,15 @@ class MapViewModel extends ChangeNotifier {
       _generateArrows(points);
       _startPlaybackTimer();
       _updateReplayMarker();
-      
-      notifyListeners();
     } catch (e) {
-      debugPrint("Error starting replay: $e");
       _isReplaying = false;
-      notifyListeners();
     }
+    notifyListeners();
   }
 
   void _startPlaybackTimer() {
     _playbackTimer?.cancel();
-    final interval = (1000 / _playbackSpeed).toInt();
-    _playbackTimer = Timer.periodic(Duration(milliseconds: interval), (timer) {
+    _playbackTimer = Timer.periodic(Duration(milliseconds: (1000 / _playbackSpeed).toInt()), (timer) {
       if (_currentStepIndex < _historyData.length - 1) {
         _currentStepIndex++;
         _updateReplayMarker();
@@ -618,9 +632,7 @@ class MapViewModel extends ChangeNotifier {
   void togglePlayPause() {
     _isPlaying = !_isPlaying;
     if (_isPlaying) {
-      if (_currentStepIndex >= _historyData.length - 1) {
-        _currentStepIndex = 0;
-      }
+      if (_currentStepIndex >= _historyData.length - 1) _currentStepIndex = 0;
       _startPlaybackTimer();
     } else {
       _playbackTimer?.cancel();
@@ -636,78 +648,48 @@ class MapViewModel extends ChangeNotifier {
 
   void setPlaybackSpeed(double speed) {
     _playbackSpeed = speed;
-    if (_isPlaying) {
-      _startPlaybackTimer();
-    }
+    if (_isPlaying) _startPlaybackTimer();
     notifyListeners();
   }
 
   void toggleFollow() {
     _isFollowActive = !_isFollowActive;
-    if (_isFollowActive && _historyData.isNotEmpty) {
-      _centerCameraOnCurrentStep();
-    }
+    if (_isFollowActive && _historyData.isNotEmpty) _centerCameraOnCurrentStep();
     notifyListeners();
   }
 
   void _centerCameraOnCurrentStep() {
     if (_mapController == null || _historyData.isEmpty || _currentStepIndex >= _historyData.length) return;
     final pos = _historyData[_currentStepIndex];
-    final lat = (pos['latitude'] as num).toDouble();
-    final lng = (pos['longitude'] as num).toDouble();
-    _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(lat, lng)));
+    _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng((pos['latitude'] as num).toDouble(), (pos['longitude'] as num).toDouble())));
   }
 
   void _updateReplayMarker() async {
     if (_historyData.isEmpty || _currentStepIndex >= _historyData.length) return;
-    
     final pos = _historyData[_currentStepIndex];
     final lat = (pos['latitude'] as num).toDouble();
     final lng = (pos['longitude'] as num).toDouble();
-    final deviceId = pos['deviceId'];
-    
-    // We reuse the existing marker logic but for the specific historical point
-    final route = _selectedRoutes.firstWhere((r) => r.id == deviceId, orElse: () => _selectedRoutes.first);
-    
-    final BitmapDescriptor icon = await _createCustomMarker(route.name, true);
-    
-    final marker = Marker(
-      markerId: MarkerId("replay_marker"),
-      position: LatLng(lat, lng),
-      icon: icon,
-      anchor: const Offset(0.5, 1.0),
-      zIndex: 2,
-    );
+    if (lat == 0 || lng == 0) return;
+
+    final route = _selectedRoutes.firstWhere((r) => r.id == pos['deviceId'], orElse: () => _selectedRoutes.first);
+    final icon = await _createCustomMarker(route.name, true);
     
     _markers.removeWhere((m) => m.markerId.value == "replay_marker");
-    _markers.add(marker);
+    _markers.add(Marker(markerId: const MarkerId("replay_marker"), position: LatLng(lat, lng), icon: icon, anchor: const Offset(0.5, 1.0), zIndex: 2));
 
-    if (_isFollowActive) {
-      _centerCameraOnCurrentStep();
-    }
+    if (_isFollowActive) _centerCameraOnCurrentStep();
   }
 
   Future<BitmapDescriptor> _createArrowIcon() async {
     if (_arrowIcon != null) return _arrowIcon!;
-
-    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(pictureRecorder);
-    const double size = 40.0;
-    final Paint paint = Paint()
-      ..color = colorAmarillo
-      ..style = PaintingStyle.fill;
-
-    final Path path = Path();
-    path.moveTo(size / 2, 0); // Tip
-    path.lineTo(size, size); // Bottom right
-    path.lineTo(size / 2, size * 0.7); // Bottom middle (indent)
-    path.lineTo(0, size); // Bottom left
-    path.close();
-
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const size = 40.0;
+    final paint = Paint()..color = colorAmarillo..style = PaintingStyle.fill;
+    final path = Path()..moveTo(size/2, 0)..lineTo(size, size)..lineTo(size/2, size*0.7)..lineTo(0, size)..close();
     canvas.drawPath(path, paint);
-
-    final ui.Image image = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
-    final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final image = await recorder.endRecording().toImage(size.toInt(), size.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     _arrowIcon = BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
     return _arrowIcon!;
   }
@@ -715,80 +697,51 @@ class MapViewModel extends ChangeNotifier {
   void _generateArrows(List<LatLng> points) async {
     _arrowMarkers.clear();
     if (points.length < 2) return;
-
-    final BitmapDescriptor arrowIcon = await _createArrowIcon();
-
-    // Add arrow every N points to avoid clutter
-    const int gap = 15;
-    for (int i = 0; i < points.length - 1; i += gap) {
-      final p1 = points[i];
-      final p2 = points[i + 1];
-      final bearing = _calculateBearing(p1, p2);
-      
+    final icon = await _createArrowIcon();
+    for (int i = 0; i < points.length - 1; i += 15) {
+      final bearing = _calculateBearing(points[i], points[i+1]);
       final pos = _historyData[i];
-      final dateRaw = pos['deviceTime'] ?? pos['serverTime'];
-      String dateStr = "";
-      String timeStr = "";
-      if (dateRaw != null) {
-        final date = DateTime.parse(dateRaw).toLocal();
-        dateStr = DateFormat("dd/MM/yyyy").format(date);
-        timeStr = DateFormat("HH:mm:ss").format(date);
-      }
-      final double speedVal = (pos['speed'] as num? ?? 0.0).toDouble() * 1.852; // knots to km/h
-
-      final marker = Marker(
+      _arrowMarkers.add(Marker(
         markerId: MarkerId("arrow_$i"),
-        position: p1,
-        icon: arrowIcon,
+        position: points[i],
+        icon: icon,
         rotation: bearing,
         anchor: const Offset(0.5, 0.5),
         flat: true,
-        infoWindow: InfoWindow(
-          title: "Velocidad: ${speedVal.toStringAsFixed(1)} km/h",
-          snippet: "Fecha: $dateStr  Hora: $timeStr",
-        ),
-      );
-      _arrowMarkers.add(marker);
+        infoWindow: InfoWindow(title: "Velocidad: ${((pos['speed'] as num? ?? 0.0) * 1.852).toStringAsFixed(1)} km/h"),
+      ));
     }
   }
 
   double _calculateBearing(LatLng start, LatLng end) {
-    final double lat1 = start.latitude * (3.141592653589793 / 180.0);
-    final double lon1 = start.longitude * (3.141592653589793 / 180.0);
-    final double lat2 = end.latitude * (3.141592653589793 / 180.0);
-    final double lon2 = end.longitude * (3.141592653589793 / 180.0);
-
-    final double dLon = lon2 - lon1;
-    final double y = math.sin(dLon) * math.cos(lat2);
-    final double x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
-    final double radians = math.atan2(y, x);
-    return (radians * (180.0 / 3.141592653589793) + 360.0) % 360.0;
+    final lat1 = start.latitude * (math.pi / 180.0);
+    final lon1 = start.longitude * (math.pi / 180.0);
+    final lat2 = end.latitude * (math.pi / 180.0);
+    final lon2 = end.longitude * (math.pi / 180.0);
+    final dLon = lon2 - lon1;
+    final y = math.sin(dLon) * math.cos(lat2);
+    final x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dLon);
+    return (math.atan2(y, x) * (180.0 / math.pi) + 360.0) % 360.0;
   }
 
   @override
   Set<Marker> get markers => {..._markers, ..._arrowMarkers};
 
   void stopReplay() {
-    final int? formerId = _replayedDeviceId;
+    final formerId = _replayedDeviceId;
     _isReplaying = false;
     _isPlaying = false;
     _playbackTimer?.cancel();
-    _historyData = [];
     _polylines.clear();
     _arrowMarkers.clear();
     _markers.removeWhere((m) => m.markerId.value == "replay_marker");
     _replayedDeviceId = null;
-    
-    // Center camera on the unit if it exists in our real-time list
     if (formerId != null && _mapController != null) {
       try {
         final route = _allRoutes.firstWhere((r) => r.id == formerId);
         _mapController!.animateCamera(CameraUpdate.newLatLng(LatLng(route.lat, route.lng)));
-      } catch (_) {
-        // Route not found in current list
-      }
+      } catch (_) {}
     }
-    
     notifyListeners();
   }
 }
