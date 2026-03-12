@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../services/auth_service.dart';
+import '../service/auth_service.dart';
 import '../models/user_session.dart';
 import '../viewmodel/map_viewmodel.dart';
 
@@ -72,7 +72,7 @@ class _MapsViewContentState extends State<_MapsViewContent> {
           child: Consumer<MapViewModel>(
             builder: (sheetContext, model, child) {
               return DraggableScrollableSheet(
-                initialChildSize: 0.6,
+                initialChildSize: 0.90,
                 minChildSize: 0.4,
                 maxChildSize: 0.9,
                 builder: (_, scrollController) {
@@ -509,7 +509,7 @@ class _StatusFilterButton extends StatelessWidget {
           children: [
             Icon(
               icon,
-              color: isActive ? activeColor : Colors.grey[400],
+              color: activeColor, //isActive ? activeColor : Colors.grey[400],
               size: 14,
             ),
             const SizedBox(height: 3),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../models/operator_model.dart';
 import '../models/reader_event_model.dart';
 import '../service/RequestServ.dart';
 
@@ -27,7 +28,17 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
   bool _isLoading = true;
   List<ReaderEvent> _events = [];
   String? _error;
-  
+
+  // region info operator
+  String branch = "";
+  String dateAssig = "";
+  String operator = "";
+  String supervisor = "";
+  String unit = "";
+  String phone = "";
+  String position = "";
+  // endregion info operator
+
   late DateTime _dtInicio;
   late DateTime _dtFin;
   final _formatter = DateFormat('yyyy-MM-dd HH:mm');
@@ -43,6 +54,7 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
       _dtFin = DateTime.now();
     }
     _fetchData();
+    _getInfoOperator();
   }
 
   Future<void> _fetchData() async {
@@ -176,6 +188,44 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
     }
   }
 
+  Future<void> _getInfoOperator() async {
+    final resqSer = RequestServ.instance;
+    try{
+      ResponseOperator? response = await resqSer.handlingRequestParsed(
+        urlParam: "https://nuevosistema.busmen.net/WS/opunisup.php",
+        method: "GET",
+        params: {"unidad":"1489"},
+        asJson: true,
+        fromJson: (json){
+          // print("_getInfoOperator json => $json");
+          return ResponseOperator.fromJson(json);
+        }
+      );
+
+      if( response?.respuesta != "exito" ){
+        return;
+      }
+      branch = response?.datosUnidadOperador.first.sucursal ?? "";
+      dateAssig = response?.datosUnidadOperador.first.fechaAsignacionUnidad ?? "";
+      operator = response?.datosUnidadOperador.first.operador ?? "";
+      supervisor = response?.datosUnidadOperador.first.supervisor ?? "";
+      unit = response?.datosUnidadOperador.first.unidad ?? "";
+      phone = response?.datosUnidadOperador.first.telefono ?? "";
+      position = response?.datosUnidadOperador.first.puestoOperador ?? "";
+
+    }catch( e ){
+      print("[ ERRO ] _getInfoOperator => $e ");
+    }finally{
+    }
+  }
+
+  Future<void> _getHistoryMiove() async {
+    String urlHistory = "https://rastreobusmen.geovoy.com/api/positions?"
+        "deviceId=73&"
+        "from=2026-03-06T06%3A00%3A00.000Z&"
+        "to=2026-03-07T05%3A59%3A59.999Z";
+  }
+
   int get _totalEmployees {
     return _events
         .where((e) => e.noEmpleado.trim().isNotEmpty)
@@ -187,9 +237,10 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.4,
-      maxChildSize: 0.9,
+      initialChildSize: 0.95,
+      minChildSize: 0.5,
+      maxChildSize: 0.98,
+      expand: false,
       builder: (_, scrollController) {
         return Container(
           decoration: const BoxDecoration(
@@ -214,7 +265,12 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const SizedBox(width: 48), 
+                        IconButton(
+                          onPressed: () => _getHistoryMiove(),
+                          icon: const Icon(Icons.play_arrow_outlined, color: Color(0xFF14143A)),
+                          tooltip: 'Ver rutas',
+                        ),
+                        // const SizedBox(width: 48),
                         Expanded(
                           child: Text(
                             widget.route.name,
@@ -241,6 +297,42 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
+                    const SizedBox(height: 10),
+
+                    // region info operator
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Sucursar : $branch",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            "Operador:\n$operator",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            "Tel: $phone",
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // endregion info operator
                     const SizedBox(height: 10),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -436,4 +528,5 @@ class _ReaderEventsBottomSheetState extends State<ReaderEventsBottomSheet> {
     if (type.toLowerCase().contains('apagado')) return Icons.power_off;
     return Icons.event;
   }
+
 }

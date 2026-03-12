@@ -43,9 +43,9 @@ class MapViewModel extends ChangeNotifier {
   bool get statusFilterUnknown => _statusFilterUnknown;
 
   // Counts
-  int get onlineCount => _allRoutes.where((r) => r.status == true).length;
-  int get offlineCount => _allRoutes.where((r) => r.status == false).length;
-  int get unknownCount => _allRoutes.where((r) => r.status == null).length;
+  int get onlineCount => _allRoutes.where((r) => r.statusText.toString().toLowerCase() == "online").length;
+  int get offlineCount => _allRoutes.where((r) => r.statusText.toString().toLowerCase() == "offline").length;
+  int get unknownCount => _allRoutes.where((r) => r.statusText.toString().toLowerCase() == "unknow").length;
 
   List<RouteModel> get selectedRoutes => _selectedRoutes;
   List<RouteModel> get filteredRoutes => _filteredRoutes;
@@ -64,7 +64,7 @@ class MapViewModel extends ChangeNotifier {
     if (!_isBottomSheetOpen) {
       _searchQuery = '';
     } else {
-      _filteredRoutes = _allRoutes.toList();
+      _applyFilters();
     }
     notifyListeners();
   }
@@ -107,7 +107,7 @@ class MapViewModel extends ChangeNotifier {
   }
 
   void _applyFilters() {
-    _filteredRoutes = _allRoutes
+    final filtered = _allRoutes
         .where((route) {
           final matchesSearch = route.name.toLowerCase().contains(_searchQuery.toLowerCase());
           final matchesGroup = _selectedGroupId == null || route.groupId == _selectedGroupId;
@@ -122,6 +122,18 @@ class MapViewModel extends ChangeNotifier {
           return matchesSearch && matchesGroup && matchesStatus;
         })
         .toList();
+
+    // ORDENAR: Seleccionados primero
+    filtered.sort((a, b) {
+      final aSelected = _selectedRoutes.contains(a);
+      final bSelected = _selectedRoutes.contains(b);
+      if (aSelected != bSelected) {
+        return aSelected ? -1 : 1;
+      }
+      return 0; // Mantener el orden original para el resto
+    });
+
+    _filteredRoutes = filtered;
     notifyListeners();
   }
 
@@ -144,7 +156,7 @@ class MapViewModel extends ChangeNotifier {
       _selectedRoutes.addAll(_allRoutes);
     }
     _updateCameraBounds();
-    notifyListeners();
+    _applyFilters();
   }
 
   void initSocket() {
@@ -227,6 +239,7 @@ class MapViewModel extends ChangeNotifier {
 
       if (responseDevice.statusCode == 200) {
         final List<dynamic> data = json.decode(responseDevice.body);
+        print("data => $data");
         _allRoutes = data.map((json) => RouteModel.fromJson(json)).toList();
         _filteredRoutes = List.from(_allRoutes);
       } else {
@@ -258,7 +271,7 @@ class MapViewModel extends ChangeNotifier {
         gravity: ToastGravity.BOTTOM,
       );
 
-      notifyListeners();
+      _applyFilters();
     } else {
       _loadingRoutes.add(route.id);
       notifyListeners();
@@ -287,7 +300,7 @@ class MapViewModel extends ChangeNotifier {
           gravity: ToastGravity.BOTTOM,
         );
 
-        notifyListeners();
+        _applyFilters();
       }
     }
   }
