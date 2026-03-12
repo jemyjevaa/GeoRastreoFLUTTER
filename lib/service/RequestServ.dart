@@ -26,14 +26,7 @@ class RequestServ {
     bool asJson = false,
   }) async {
     try {
-      // Decide base URL
-      // bool isNormUrl = urlParam == urlValidateUser ||
-      //     urlParam == urlGetRoute ||
-      //     urlParam == urlStopInRoute ||
-      //     urlParam == urlUnitAsiggned;
-
-      final base = baseUrlNor; //isNormUrl ? baseUrlNor : baseUrlAdm;
-      String fullUrl = base + urlParam;
+      String fullUrl = urlParam.startsWith('http') ? urlParam : baseUrlNor + urlParam;
 
       http.Response response;
 
@@ -86,7 +79,9 @@ class RequestServ {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         return response.body;
       } else {
-        print("HTTP error: ${response.statusCode}");
+        print("HTTP error statusCode =>: ${response.statusCode}");
+        print("HTTP error body =>: ${response.body}");
+        print("HTTP error headers =>: ${response.headers}");
         return null;
       }
     } catch (e) {

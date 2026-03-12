@@ -3,8 +3,8 @@ import 'package:geo_rastreo/service/user_session_cache.dart';
 import 'package:provider/provider.dart';
 import 'package:geo_rastreo/views/LoginView.dart';
 import 'package:geo_rastreo/views/MapsView.dart';
-import 'package:geo_rastreo/viewmodels/login_viewmodel.dart';
-import 'package:geo_rastreo/services/auth_service.dart';
+import 'package:geo_rastreo/viewmodel/login_viewmodel.dart';
+import 'package:geo_rastreo/service/auth_service.dart';
 
 import 'models/user_session.dart';
 

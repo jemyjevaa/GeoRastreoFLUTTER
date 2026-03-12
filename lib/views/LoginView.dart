@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:geo_rastreo/views/MapsView.dart';
-import 'package:geo_rastreo/viewmodels/login_viewmodel.dart';
+import 'package:geo_rastreo/viewmodel/login_viewmodel.dart';
 
 
 class LoginView extends StatefulWidget {
