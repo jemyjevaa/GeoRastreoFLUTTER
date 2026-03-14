@@ -13,6 +13,8 @@ import '../models/route_model.dart';
 import '../models/group_model.dart';
 import '../service/RequestServ.dart';
 import '../service/SocketServ.dart';
+import '../models/interactive_route_model.dart';
+import '../models/operator_model.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:intl/intl.dart';
 import '../views/reader_events_bottom_sheet.dart';
@@ -54,6 +56,9 @@ class MapViewModel extends ChangeNotifier {
   Set<Marker> _arrowMarkers = {};
   bool _isFollowActive = true;
   BitmapDescriptor? _arrowIcon;
+  Marker? _interactiveStopMarker;
+  Set<Marker> _nearestOperatorMarkers = {};
+  bool _showInteractiveUI = false;
 
   bool get isLoadingRoutes => _isLoadingRoutes;
   bool get isBottomSheetOpen => _isBottomSheetOpen;
@@ -61,6 +66,16 @@ class MapViewModel extends ChangeNotifier {
   bool get isReplaying => _isReplaying;
   bool get isPlaying => _isPlaying;
   bool get isFollowActive => _isFollowActive;
+  bool get showInteractiveUI => _showInteractiveUI;
+
+  void setShowInteractiveUI(bool value) {
+    _showInteractiveUI = value;
+    if (!value) {
+      _interactiveStopMarker = null;
+      _nearestOperatorMarkers.clear();
+    }
+    notifyListeners();
+  }
   int get currentStepIndex => _currentStepIndex;
   int get totalSteps => _historyData.length;
   double get playbackSpeed => _playbackSpeed;
@@ -725,7 +740,173 @@ class MapViewModel extends ChangeNotifier {
   }
 
   @override
-  Set<Marker> get markers => {..._markers, ..._arrowMarkers};
+  Set<Marker> get markers => {
+        ..._markers,
+        ..._arrowMarkers,
+        if (_interactiveStopMarker != null) _interactiveStopMarker!,
+        ..._nearestOperatorMarkers,
+      };
+
+  void setInteractiveMarkers(InteractiveRouteModel route, List<OperatorModel> operators) async {
+    _showInteractiveUI = true;
+    // 1. Create custom markers
+    final stopIcon = await _createCircularMarker(Icons.location_on, Colors.blueAccent, "Parada");
+    final operatorIcon = await _createCircularMarker(Icons.person, const Color(0xFFF69D32), "Operador");
+
+    // 2. Add Stop Marker
+    _interactiveStopMarker = Marker(
+      markerId: const MarkerId("selected_interactive_stop"),
+      position: LatLng(route.latitud, route.longitud),
+      infoWindow: InfoWindow(title: "Parada: ${route.nombreParada}"),
+      icon: stopIcon,
+    );
+
+    // 3. Add Operator Markers
+    _nearestOperatorMarkers.clear();
+    for (var op in operators) {
+      _nearestOperatorMarkers.add(
+        Marker(
+          markerId: MarkerId("operator_${op.operador}"),
+          position: LatLng(op.latitude, op.longitude),
+          icon: operatorIcon,
+          onTap: () {
+            if (_currentContext != null) {
+              _showOperatorDetail(op, _currentContext!);
+            }
+          },
+        ),
+      );
+    }
+
+    // 4. Move Camera to Stop
+    if (_mapController != null) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngZoom(LatLng(route.latitud, route.longitud), 15),
+      );
+    }
+
+    notifyListeners();
+  }
+
+  Future<BitmapDescriptor> _createCircularMarker(IconData icon, Color color, String label) async {
+    const double size = 60.0;
+    final ui.PictureRecorder pictureRecorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(pictureRecorder);
+    final Paint paint = Paint()..color = color;
+    final double radius = size / 2;
+
+    // Draw background circle
+    canvas.drawCircle(Offset(radius, radius), radius, paint);
+    
+    // Draw Border
+    final Paint borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6.0;
+    canvas.drawCircle(Offset(radius, radius), radius - 3, borderPaint);
+
+    // Draw Icon
+    TextPainter textPainter = TextPainter(textDirection: ui.TextDirection.ltr);
+    textPainter.text = TextSpan(
+      text: String.fromCharCode(icon.codePoint),
+      style: TextStyle(
+        fontSize: 35.0,
+        fontFamily: icon.fontFamily,
+        color: Colors.white,
+      ),
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(radius - textPainter.width / 2, radius - textPainter.height / 2),
+    );
+
+    final ui.Image image = await pictureRecorder.endRecording().toImage(size.toInt(), size.toInt());
+    final ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    return BitmapDescriptor.bytes(byteData!.buffer.asUint8List());
+  }
+
+  void _showOperatorDetail(OperatorModel op, BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              colors: [Colors.white, Colors.grey[50]!],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF69D32).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.person, size: 40, color: Color(0xFFF69D32)),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                op.operador,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF14143A)),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                op.puesto,
+                style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Divider(),
+              ),
+              _buildModernInfoRow(Icons.supervisor_account, "Supervisor", op.supervisor),
+              const SizedBox(height: 12),
+              _buildModernInfoRow(Icons.phone, "Teléfono", op.telCel),
+              const SizedBox(height: 25),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14143A),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text("Cerrar", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernInfoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: const Color(0xFFF69D32)),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+            Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF14143A))),
+          ],
+        ),
+      ],
+    );
+  }
 
   void stopReplay() {
     final formerId = _replayedDeviceId;

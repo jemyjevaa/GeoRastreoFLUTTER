@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:geo_rastreo/views/LoginView.dart';
 import 'package:geo_rastreo/views/MapsView.dart';
 import 'package:geo_rastreo/viewmodel/login_viewmodel.dart';
+import 'package:geo_rastreo/providers/interactive_bottom_sheet_provider.dart';
 import 'package:geo_rastreo/service/auth_service.dart';
 import 'package:media_kit/media_kit.dart'; // Importar media_kit
 
@@ -24,6 +25,7 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => LoginViewModel()),
+        ChangeNotifierProvider(create: (_) => InteractiveBottomSheetProvider()),
       ],
       child: const MyApp(),
     ),

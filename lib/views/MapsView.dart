@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import '../service/auth_service.dart';
-import '../models/user_session.dart';
-import '../viewmodel/map_viewmodel.dart';
+import 'package:flutter_speed_dial/flutter_speed_dial.dart';
+import 'package:geo_rastreo/service/auth_service.dart';
+import 'package:geo_rastreo/models/user_session.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:geo_rastreo/views/widgets/interactive_bottom_sheet.dart';
+import 'package:geo_rastreo/models/interactive_route_model.dart';
+import 'package:geo_rastreo/models/operator_model.dart';
+import 'package:geo_rastreo/providers/interactive_bottom_sheet_provider.dart';
+import 'package:geo_rastreo/viewmodel/map_viewmodel.dart';
 
 
 class MapsView extends StatelessWidget {
@@ -59,6 +65,7 @@ class _MapsViewContentState extends State<_MapsViewContent> {
 
     if (viewModel.isBottomSheetOpen) return;
 
+    viewModel.setShowInteractiveUI(false);
     viewModel.toggleBottomSheet();
     viewModel.fetchRoutes();
 
@@ -101,7 +108,7 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                         ),
                         const SizedBox(height: 20),
                         Text(
-                          'Seleccionar Rutas',
+                          'Seleccionar Unidades',
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -205,7 +212,7 @@ class _MapsViewContentState extends State<_MapsViewContent> {
                           padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: TextField(
                             decoration: InputDecoration(
-                              hintText: 'Buscar ruta...',
+                              hintText: 'Buscar unidades...',
                               prefixIcon: Icon(Icons.search, color: model.colorAzulFuerte),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(15),
@@ -434,39 +441,6 @@ class _MapsViewContentState extends State<_MapsViewContent> {
               ),
             ),
           ),
-          Positioned(
-            bottom: 30,
-            left: 20,
-            right: 20,
-            child: GestureDetector(
-              onTap: _showUnitSelectionSheet,
-              child: Container(
-                height: 45,
-                decoration: BoxDecoration(
-                  color: viewModel.colorAmarillo,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Text(
-                    'SELECCIONAR UNIDAD',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: viewModel.colorAzulFuerte,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
           if (viewModel.isReplaying)
             Positioned(
               bottom: 20,
@@ -474,8 +448,70 @@ class _MapsViewContentState extends State<_MapsViewContent> {
               right: 20,
               child: _ReplayConsole(viewModel: viewModel),
             ),
+          if (viewModel.showInteractiveUI)
+            Positioned(
+              bottom: 120,
+              left: 20,
+              right: 20,
+              child: _RadiusControlOverlay(),
+            ),
         ],
       ),
+      floatingActionButton: viewModel.isReplaying 
+        ? null 
+        : SpeedDial(
+            animatedIcon: AnimatedIcons.menu_close,
+            animatedIconTheme: const IconThemeData(size: 28.0),
+            backgroundColor: viewModel.colorAmarillo,
+            foregroundColor: viewModel.colorAzulFuerte,
+            visible: true,
+            curve: Curves.bounceIn,
+            overlayColor: Colors.black,
+            overlayOpacity: 0.3,
+            elevation: 8.0,
+            shape: const CircleBorder(),
+            spacing: 15,
+            spaceBetweenChildren: 10,
+            children: [
+              SpeedDialChild(
+                child: const Icon(Icons.local_shipping_outlined),
+                backgroundColor: Colors.white,
+                foregroundColor: viewModel.colorAzulFuerte,
+                label: 'Seleccionar unidad',
+                labelStyle: TextStyle(
+                  fontSize: 15, 
+                  fontWeight: FontWeight.w500,
+                  color: viewModel.colorAzulFuerte,
+                ),
+                labelBackgroundColor: Colors.white,
+                onTap: _showUnitSelectionSheet,
+              ),
+              SpeedDialChild(
+                child: const Icon(Icons.route_outlined),
+                backgroundColor: Colors.white,
+                foregroundColor: viewModel.colorAzulFuerte,
+                label: 'Seleccionar ruta',
+                labelStyle: TextStyle(
+                  fontSize: 15, 
+                  fontWeight: FontWeight.w500,
+                  color: viewModel.colorAzulFuerte,
+                ),
+                labelBackgroundColor: Colors.white,
+                onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => InteractiveBottomSheet(
+                      onConfirm: (route, operators) {
+                        viewModel.setInteractiveMarkers(route, operators);
+                      },
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
     );
   }
 
@@ -661,6 +697,190 @@ class _ReplayConsole extends StatelessWidget {
             }).toList(),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _RadiusControlOverlay extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final viewModel = context.read<MapViewModel>();
+    return Consumer<InteractiveBottomSheetProvider>(
+      builder: (context, provider, child) {
+        return Card(
+          elevation: 6,
+          shadowColor: Colors.black26,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(15),
+              color: Colors.white.withOpacity(0.95),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.radar, color: Color(0xFFF69D32), size: 18),
+                    const SizedBox(width: 8),
+                    Text(
+                      "${provider.radius.toInt()} km",
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF14143A)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3.0,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6.0),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 14.0),
+                        ),
+                        child: Slider(
+                          value: provider.radius,
+                          min: 1,
+                          max: 60,
+                          activeColor: const Color(0xFFF69D32),
+                          inactiveColor: Colors.grey[300],
+                          onChanged: (val) {
+                            provider.setRadius(val);
+                            viewModel.setInteractiveMarkers(
+                              provider.selectedRoute!,
+                              provider.nearestOperators,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18, color: Colors.grey),
+                      onPressed: () => viewModel.setShowInteractiveUI(false),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Divider(height: 1),
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _buildCompactStat("Cercanos:", provider.nearestOperators.length, Colors.green),
+                    Container(height: 15, width: 1, color: Colors.grey[300]),
+                    GestureDetector(
+                      onTap: () {
+                        if (provider.operatorsWithoutCoords.isNotEmpty) {
+                          _showNoGpsDialog(context, provider.operatorsWithoutCoords);
+                        }
+                      },
+                      child: _buildCompactStat("Sin GPS:", provider.operatorsWithoutCoords.length, Colors.redAccent, isClickable: provider.operatorsWithoutCoords.isNotEmpty),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCompactStat(String label, int value, Color color, {bool isClickable = false}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: TextStyle(fontSize: 12, color: Colors.grey[700], fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          value.toString(),
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color),
+        ),
+        if (isClickable) ...[
+          const SizedBox(width: 4),
+          Icon(Icons.touch_app, size: 12, color: color.withOpacity(0.7)),
+        ]
+      ],
+    );
+  }
+
+  void _showNoGpsDialog(BuildContext context, List<OperatorModel> operators) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.location_off, color: Colors.redAccent),
+                  ),
+                  const SizedBox(width: 15),
+                  const Expanded(
+                    child: Text(
+                      "Operadores sin GPS",
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF14143A)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 15),
+              const Divider(),
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: operators.length,
+                  separatorBuilder: (_, __) => const Divider(),
+                  itemBuilder: (context, index) {
+                    final op = operators[index];
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const CircleAvatar(
+                        backgroundColor: Color(0xFF14143A),
+                        child: Icon(Icons.person, color: Colors.white, size: 20),
+                      ),
+                      title: Text(op.operador, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                      subtitle: Text('Tel: ${op.telCel}\nPuesto: ${op.puesto}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                      isThreeLine: true,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 15),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF14143A),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text("Cerrar", style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

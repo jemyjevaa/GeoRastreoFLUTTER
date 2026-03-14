@@ -1,6 +1,58 @@
+class OperatorModel {
+  final String operador;
+  final String supervisor;
+  final String puesto;
+  final String telCel;
+  final String coordenadas;
+
+  OperatorModel({
+    required this.operador,
+    required this.supervisor,
+    required this.puesto,
+    required this.telCel,
+    required this.coordenadas,
+  });
+
+  factory OperatorModel.fromJson(Map<String, dynamic> json) {
+    return OperatorModel(
+      operador: json['operador'] ?? '',
+      supervisor: json['Supervisor'] ?? '',
+      puesto: json['puesto'] ?? '',
+      telCel: json['tel_cel'] ?? '',
+      coordenadas: json['Coordenadas'] ?? '0.0,0.0',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'operador': operador,
+      'Supervisor': supervisor,
+      'puesto': puesto,
+      'tel_cel': telCel,
+      'Coordenadas': coordenadas,
+    };
+  }
+
+  double get latitude {
+    try {
+      return double.parse(coordenadas.split(',')[0].trim());
+    } catch (_) {
+      return 0.0;
+    }
+  }
+
+  double get longitude {
+    try {
+      return double.parse(coordenadas.split(',')[1].trim());
+    } catch (_) {
+      return 0.0;
+    }
+  }
+}
+
 class ResponseOperator {
   final String respuesta;
-  final List<OperatorData> datosUnidadOperador;
+  final List<DatosUnidadOperador> datosUnidadOperador;
 
   ResponseOperator({
     required this.respuesta,
@@ -10,15 +62,14 @@ class ResponseOperator {
   factory ResponseOperator.fromJson(Map<String, dynamic> json) {
     return ResponseOperator(
       respuesta: json['respuesta'] ?? '',
-      datosUnidadOperador: (json['datos de Unidad - Operador'] as List?)
-              ?.map((i) => OperatorData.fromJson(i))
-              .toList() ??
-          [],
+      datosUnidadOperador: (json['datos_unidad_operador'] as List? ?? [])
+          .map((i) => DatosUnidadOperador.fromJson(i))
+          .toList(),
     );
   }
 }
 
-class OperatorData {
+class DatosUnidadOperador {
   final String sucursal;
   final String fechaAsignacionUnidad;
   final String operador;
@@ -26,9 +77,8 @@ class OperatorData {
   final String unidad;
   final String telefono;
   final String puestoOperador;
-  final String idOperador;
 
-  OperatorData({
+  DatosUnidadOperador({
     required this.sucursal,
     required this.fechaAsignacionUnidad,
     required this.operador,
@@ -36,19 +86,17 @@ class OperatorData {
     required this.unidad,
     required this.telefono,
     required this.puestoOperador,
-    required this.idOperador,
   });
 
-  factory OperatorData.fromJson(Map<String, dynamic> json) {
-    return OperatorData(
+  factory DatosUnidadOperador.fromJson(Map<String, dynamic> json) {
+    return DatosUnidadOperador(
       sucursal: json['sucursal'] ?? '',
-      fechaAsignacionUnidad: json['Fecha_Asignacion_Unidad'] ?? '',
-      operador: json['Operador'] ?? '',
-      supervisor: json['Supervisor'] ?? '',
-      unidad: json['Unidad'] ?? '',
-      telefono: json['Telefono'] ?? '',
-      puestoOperador: json['Puesto_Operador'] ?? '',
-      idOperador: json['ID_Operador'] ?? '',
+      fechaAsignacionUnidad: json['fecha_asignacion_unidad'] ?? '',
+      operador: json['operador'] ?? '',
+      supervisor: json['supervisor'] ?? '',
+      unidad: json['unidad'] ?? '',
+      telefono: json['telefono'] ?? '',
+      puestoOperador: json['puesto_operador'] ?? '',
     );
   }
 }
